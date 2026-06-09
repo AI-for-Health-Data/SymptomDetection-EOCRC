@@ -32,6 +32,7 @@ except ImportError:
     HAVE_CROSSENCODER = False
     print("INFO: sentence_transformers not installed — cross-encoder disabled.")
 
+
 PATH              = "rebuilt_notes_by_noteid.csv"
 HF_MODEL_ID       = "meta-llama/Meta-Llama-3.1-8B-Instruct"
 HF_CACHE_DIR      = "/lustre/smuexa01/client/users/nikkieh/hf_cache"
@@ -77,6 +78,7 @@ DENIAL_PREFIXES = [
     "no ","denies ","negative for ","without ",
     "absent ","none ","not ","deny ","no history of ",
 ]
+
 
 FH_EXCLUSION_KEYWORDS = [
     "germline",
@@ -401,6 +403,7 @@ def build_refined_query(symptom, critique_label, merged_vocab, group_b,
         ]
         parts = core + gb_names[:3] + clinical_anchors
         if symptom == FH_SYM:
+            # Patient-centric query — will search filtered corpus
             parts = [
                 "patient family member first degree relative",
                 "colon cancer family documented clinical note",
@@ -424,6 +427,7 @@ def retrieve_hybrid(encoder, chunk_vecs, chunks, bm25,
                     dense_k=DENSE_TOP_K, bm25_k=BM25_TOP_K,
                     candidate_k=RRF_CANDIDATE_K, keep_k=KEEP_K,
                     alpha=HYBRID_ALPHA):
+
     query_texts  = list(queries.values())
     query_vecs   = encoder.encode_queries(query_texts)
     dense_scores = chunk_vecs @ query_vecs.T          # (N_full, 7)
@@ -488,6 +492,7 @@ def retrieve_hybrid(encoder, chunk_vecs, chunks, bm25,
         for idx, score in sym_rrf.items():
             global_rrf[idx] += score
 
+    # Global top passages for the evidence block
     top_global     = sorted(global_rrf.items(),
                             key=lambda x: x[1], reverse=True)[:candidate_k]
     global_cands   = [{"text": chunks[idx], "score": score}
@@ -543,6 +548,7 @@ def symptom_present_outside_ros(note_text, symptom, merged_vocab):
                 return True
             idx += 1
     return False
+
 
 _token_pat = re.compile(r"\w+|\S")
 
@@ -610,6 +616,7 @@ def symptoms_needing_retry(critique_results, parsed,
         and str(parsed.get(sym, "")).strip().lower() == "yes"
     ]
     return to_retry[:max_retry]
+
 
 INITIAL_PROMPT = """You are an experienced gastroenterology clinician.
 Analyze the patient's clinical note and extract information
@@ -849,6 +856,7 @@ def maybe_truncate(text, max_chars=NOTE_CHAR_LIMIT):
     if len(t) <= max_chars: return t
     return t[:max_chars//2] + "\n...\n" + t[-(max_chars//2):]
 
+
 def detect_contradiction(parsed, passages, symptom, merged_vocab, note_text):
     if str(parsed.get(symptom, "")).strip().lower() != "no":
         return False, None
@@ -937,7 +945,7 @@ def run_inference(notes_df, encoder, chunk_vecs, chunks, bm25,
 
         audit = {sym: {"bleu_rounds": [], "label_rounds": [],
                        "final_round": 0} for sym in SYMPTOMS}
-        per_sym_retry = per_sym_pass  
+        per_sym_retry = per_sym_pass  # FIX 4
 
         if parsed:
             critique0 = critique_output(parsed, note_text)
@@ -1104,6 +1112,7 @@ def run_inference(notes_df, encoder, chunk_vecs, chunks, bm25,
         exp_df["exp_output_dict"].apply(lambda x: isinstance(x, dict))
     ].copy().reset_index(drop=True)
     return valid_df
+
 
 def run_metrics(valid_df):
     print("\n" + "="*70)
