@@ -7,18 +7,18 @@ from collections import Counter
 import numpy as np
 import pandas as pd
 from tqdm import tqdm
-import ollama
 
 try:
     from bert_score import score as bert_score
     HAVE_BERTSCORE = True
 except ModuleNotFoundError:
     HAVE_BERTSCORE = False
-    print("bert_score is not installed. Running Exp. 2 with counts + Conf + BLEU only.")
+    print("bert_score is not installed. Running Exp. 4 with counts + Conf + BLEU only.")
 
-PATH = "rebuilt_notes_by_noteid.csv"
-MODEL = "llama3:latest"
-TEMPERATURE = 0
+PATH           = "rebuilt_notes_by_noteid.csv"
+HF_MODEL_ID    = "meta-llama/Meta-Llama-3.1-8B-Instruct"
+HF_CACHE_DIR   = "/lustre/smuexa01/client/users/nikkieh/hf_cache"
+TEMPERATURE    = 0
 MAX_NOTE_CHARS = None
 
 os.environ["TRANSFORMERS_NO_TF"]   = "1"
@@ -27,27 +27,65 @@ os.environ["USE_TF"]               = "0"
 os.environ["USE_FLAX"]             = "0"
 os.environ["TF_CPP_MIN_LOG_LEVEL"] = "3"
 
-notes_df = pd.read_csv(PATH)
 
-if "Clean_note_text" not in notes_df.columns:
-    raise ValueError("Clean_note_text not found in preprocessed file.")
+def load_notes():
+    notes_df = pd.read_csv(PATH)
+    if "Clean_note_text" not in notes_df.columns:
+        raise ValueError("Clean_note_text not found in preprocessed file.")
+    for col in ["DATE_OF_SERVIC_DTTM", "SPEC_NOTE_TIME_DTTM", "CONTACT_DATE"]:
+        if col in notes_df.columns:
+            notes_df[col] = pd.to_datetime(notes_df[col], errors="coerce")
+    sort_cols = [c for c in [
+        "PAT_ID", "PAT_ENC_CSN_ID", "DATE_OF_SERVIC_DTTM",
+        "SPEC_NOTE_TIME_DTTM", "CONTACT_NUM", "NOTE_ID"
+    ] if c in notes_df.columns]
+    if sort_cols:
+        notes_df = notes_df.sort_values(sort_cols, kind="stable").reset_index(drop=True)
+    notes_df = notes_df[
+        notes_df["Clean_note_text"].str.strip().ne("")
+    ].reset_index(drop=True)
+    print(f"Notes loaded and ready for Experiment 4: {len(notes_df)}")
+    return notes_df
 
-for col in ["DATE_OF_SERVIC_DTTM", "SPEC_NOTE_TIME_DTTM", "CONTACT_DATE"]:
-    if col in notes_df.columns:
-        notes_df[col] = pd.to_datetime(notes_df[col], errors="coerce")
 
-sort_cols = [c for c in [
-    "PAT_ID", "PAT_ENC_CSN_ID", "DATE_OF_SERVIC_DTTM",
-    "SPEC_NOTE_TIME_DTTM", "CONTACT_NUM", "NOTE_ID"
-] if c in notes_df.columns]
-if sort_cols:
-    notes_df = notes_df.sort_values(sort_cols, kind="stable").reset_index(drop=True)
+def load_llama(model_id=HF_MODEL_ID):
+    import torch
+    from transformers import AutoTokenizer, AutoModelForCausalLM
+    print(f"\nLoading: {model_id}")
+    if torch.cuda.is_available():
+        print(f"GPU: {torch.cuda.get_device_name(0)}")
+        print(f"VRAM: {round(torch.cuda.get_device_properties(0).total_memory/1e9,1)} GB")
+    tokenizer = AutoTokenizer.from_pretrained(
+        model_id, trust_remote_code=True, cache_dir=HF_CACHE_DIR)
+    tokenizer.pad_token = tokenizer.eos_token
+    model = AutoModelForCausalLM.from_pretrained(
+        model_id, torch_dtype="float16",
+        device_map="auto", trust_remote_code=True,
+        cache_dir=HF_CACHE_DIR)
+    model.eval()
+    print("Model loaded")
+    return tokenizer, model
 
-notes_df = notes_df[
-    notes_df["Clean_note_text"].str.strip().ne("")
-].reset_index(drop=True)
 
-print(f"Notes loaded and ready for Experiment 4: {len(notes_df)}")
+def generate(prompt, tokenizer, model, max_new_tokens=1024):
+    import torch
+    messages = [{"role": "user", "content": prompt}]
+    try:
+        formatted = tokenizer.apply_chat_template(
+            messages, tokenize=False, add_generation_prompt=True)
+    except Exception:
+        formatted = f"<|user|>\n{prompt}\n<|assistant|>\n"
+    inputs = tokenizer(formatted, return_tensors="pt",
+                       truncation=True, max_length=8192).to(model.device)
+    with torch.no_grad():
+        outputs = model.generate(
+            **inputs, max_new_tokens=max_new_tokens,
+            do_sample=False, pad_token_id=tokenizer.eos_token_id)
+    new_tokens = outputs[0][inputs["input_ids"].shape[1]:]
+    return tokenizer.decode(new_tokens, skip_special_tokens=True).strip()
+
+
+notes_df = load_notes()
 
 MANUAL_ALIASES = {
     "Abdominal pain": [
@@ -290,25 +328,30 @@ def normalize_answer(x):
     return str(x).strip().lower()
 
 
+tokenizer, model = load_llama(HF_MODEL_ID)
+
 rows = []
 
-for _, row in tqdm(notes_df.iterrows(), total=len(notes_df), desc="Running Experiment 4"):
+for idx, row in tqdm(notes_df.iterrows(), total=len(notes_df), desc="Running Experiment 4"):
     note_text = maybe_truncate(row["Clean_note_text"], MAX_NOTE_CHARS)
     prompt = PROMPT_TEMPLATE_EXP4.replace("<<NOTE_TEXT>>", note_text)
 
-    resp = ollama.chat(
-        model=MODEL,
-        messages=[{"role": "user", "content": prompt}],
-        options={"temperature": TEMPERATURE}
-    )
+    try:
+        content = generate(prompt, tokenizer, model)
+    except Exception as e:
+        content = ""
+        print(f"  Error {idx}: {e}")
 
-    content = resp["message"]["content"].strip()
     parsed, raw_json = safe_json_loads(content)
 
     out = row.to_dict()
     out["exp4_output_raw"]  = raw_json
     out["exp4_output_dict"] = parsed
     rows.append(out)
+
+    if (idx + 1) % 50 == 0:
+        pd.DataFrame(rows).to_csv("experiment4_checkpoint.csv", index=False)
+        print(f"  Checkpoint: {idx+1}/{len(notes_df)}")
 
 exp4_df = pd.DataFrame(rows)
 exp4_df.to_csv("experiment4_outputs_raw.csv", index=False)
@@ -436,7 +479,7 @@ if HAVE_BERTSCORE:
                 metric_df.at[idx, bert_col] = val
     print("BERTScore done.")
 
-metric_df.to_csv("experiment2_note_level_metrics.csv", index=False)
+metric_df.to_csv("experiment4_note_level_metrics.csv", index=False)
 
 summary_rows = []
 
@@ -468,10 +511,10 @@ for symptom, conf_key, inf_key in symptom_specs:
     })
 
 summary_table = pd.DataFrame(summary_rows)
-summary_table.to_csv("experiment2_summary_table.csv", index=False)
+summary_table.to_csv("experiment4_summary_table.csv", index=False)
 
 print("\n" + "="*65)
-print("TABLE I — POSITIVE SYMPTOM DETECTION COUNTS (EXPERIMENT 2)")
+print("TABLE I — POSITIVE SYMPTOM DETECTION COUNTS (EXPERIMENT 4)")
 print("ROS rules: ON | Manual Aliases: ON | UMLS: OFF")
 print("="*65)
 print(f"{'Symptom':<46} {'Yes':>6} {'No':>6}")
@@ -481,7 +524,7 @@ for _, r in summary_table.iterrows():
 print(f"\n  TOTAL YES: {int(summary_table['Yes_Count'].sum())}")
 
 print("\n" + "="*65)
-print("TABLE II — CONFIDENCE, BLEU, BERTSCORE (EXPERIMENT 2)")
+print("TABLE II — CONFIDENCE, BLEU, BERTSCORE (EXPERIMENT 4)")
 print("Mean +- SD across ALL predictions")
 print("="*65)
 print(f"{'Symptom':<46} {'Conf':>12} {'BLEU':>12} {'BERT-P':>12}")
