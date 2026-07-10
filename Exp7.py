@@ -1,3 +1,4 @@
+from grade_evidence import tag_passages_with_grade, format_passages_with_grade
 import os, re, json, math, time, argparse
 from collections import Counter, defaultdict
 
@@ -373,24 +374,30 @@ PROMPT_TEMPLATE = """You are an experienced gastroenterology clinician.
 Analyze the patient's clinical note and extract information
 ONLY from the note text (no external assumptions).
 
-IMPORTANT RULE ABOUT ROS:
-- ROS often contains templated negatives (e.g. "no abdominal pain")
-  that conflict with the rest of the note.
+REVIEW OF SYSTEMS (ROS) RULE:
+- The ROS section often contains templated negatives (e.g., "no abdominal pain",
+  "negative for diarrhea") that can conflict with the rest of the note.
 - Do NOT use ROS-negative statements as evidence to answer "No".
-- If ROS says "no X" but HPI / Chief Complaint / Assessment show X,
-  answer "Yes" using non-ROS evidence.
-- If explicitly denied OUTSIDE ROS: answer "No" (conf 4-5).
-- If only in ROS-negative context and nowhere else: answer "No" (conf 2).
+- If ROS says "no X" but other parts (Chief Complaint, HPI, Assessment/Plan,
+  Diagnosis) indicate X, then answer "Yes" using NON-ROS evidence for inference.
+- If the symptom is not mentioned outside ROS at all, answer "No" with
+  low confidence (2), and inference can be "Not mentioned outside ROS".
+- If the note (outside ROS) explicitly denies a symptom
+  (e.g., in HPI: "patient denies rectal bleeding"), then answer "No"
+  with high confidence and use that NON-ROS denial as inference.
 
 GROUP B: EXTRA UMLS CLINICAL CONCEPTS FOUND IN THIS NOTE:
 {GROUP_B_SECTION}
 
-RETRIEVED BIOMEDICAL EVIDENCE (MedCPT semantic retrieval):
-Use these passages to interpret ambiguous findings.
+RETRIEVED BIOMEDICAL EVIDENCE (MedCPT semantic retrieval, GRADE-rated):
+Passages are labeled with their evidence quality level following the GRADE
+framework: HIGH (systematic reviews, RCTs), MODERATE (cohort studies),
+LOW (narrative reviews), VERY_LOW (case reports, expert opinion).
+Prioritize higher-GRADE evidence when interpreting ambiguous findings.
 IMPORTANT: Cite ONLY from the NOTE TEXT below, NOT from these passages.
 {EVIDENCE_SECTION}
 
-SYNONYM GUIDANCE:
+SYNONYM GUIDANCE: 
 {ALIAS_SECTION}
 
 Rules:
@@ -616,7 +623,7 @@ def load_llama(model_id=HF_MODEL_ID):
     print("LLaMA loaded")
     return tokenizer, model
 
-def generate(prompt, tokenizer, model, max_new_tokens=1024):
+def generate(prompt, tokenizer, model, max_new_tokens=1536):
     import torch
     messages = [{"role": "user", "content": prompt}]
     try:
@@ -626,13 +633,17 @@ def generate(prompt, tokenizer, model, max_new_tokens=1024):
         formatted = f"<|user|>\n{prompt}\n<|assistant|>\n"
     inputs = tokenizer(
         formatted, return_tensors="pt",
-        truncation=True, max_length=8192).to(model.device)
+        truncation=True, max_length=7000).to(model.device)   # leave room for output
     with torch.no_grad():
         outputs = model.generate(
             **inputs, max_new_tokens=max_new_tokens,
             do_sample=False, pad_token_id=tokenizer.eos_token_id)
     new_tokens = outputs[0][inputs["input_ids"].shape[1]:]
-    return tokenizer.decode(new_tokens, skip_special_tokens=True).strip()
+    text = tokenizer.decode(new_tokens, skip_special_tokens=True).strip()
+    # truncation flag: hit the cap AND JSON braces unbalanced
+    hit_cap = (len(new_tokens) >= max_new_tokens)
+    unbalanced = text.count("{") != text.count("}")
+    return text, (hit_cap and unbalanced)
 
 def maybe_truncate(text, max_chars=12000):
     if text is None: return ""
@@ -720,8 +731,15 @@ def run_inference(notes_df, encoder, chunk_vecs, chunks,
         else:
             group_b_section = prior_context + "  None detected."
 
-        evidence_section = format_passages(top_passages)
-
+        # FUSION FIX: inject each symptom's OWN retrieved passages, not the global RRF pool
+        _ev_blocks = []
+        for _sym in SYMPTOMS:
+            _ps = per_symptom_passages.get(_sym, [])
+            if _ps:
+                _ps = tag_passages_with_grade(_ps)
+                _ev_blocks.append(f"[{_sym}]\n" + format_passages_with_grade(_ps))
+        evidence_section = ("\n".join(_ev_blocks) if _ev_blocks
+                            else "  No relevant passages retrieved.")
         prompt = PROMPT_TEMPLATE
         prompt = prompt.replace("{GROUP_B_SECTION}",  group_b_section)
         prompt = prompt.replace("{EVIDENCE_SECTION}", evidence_section)
@@ -729,12 +747,27 @@ def run_inference(notes_df, encoder, chunk_vecs, chunks,
         prompt = prompt.replace("<<NOTE_TEXT>>",      note_text)
 
         try:
-            content = generate(prompt, tokenizer, model)
+            content, truncated = generate(prompt, tokenizer, model)
         except Exception as e:
             content = ""
+            truncated = False        # <-- ADD THIS LINE
             print(f"  Error note {idx}: {e}")
 
+        if truncated:
+            # output was cut off mid-JSON; retry once asking for BRIEF inferences
+            brief = prompt + ("\n\nIMPORTANT: keep each 'inference' under 15 words so the "
+                              "full JSON fits. Output ONLY compact valid JSON.")
+            content, _ = generate(brief, tokenizer, model, max_new_tokens=1536)
+
         parsed, raw_json = safe_json_loads(content)
+
+        if not parsed:
+            globals().setdefault("_PARSE_FAIL_LOG", [])
+            globals()["_PARSE_FAIL_LOG"].append({
+                "note_id": row.get("NOTE_ID", idx),
+                "len_chars": len(content),
+                "brace_open": content.count("{"), "brace_close": content.count("}"),
+                "tail": content[-120:].replace("\n"," ")})
 
         if parsed and isinstance(parsed, dict):
             needs_flatten = any(
@@ -776,7 +809,8 @@ def run_inference(notes_df, encoder, chunk_vecs, chunks,
                 _, retry_passages = retrieve_dense(
                     encoder, chunk_vecs, chunks,
                     retry_queries, merged_vocab)
-                retry_evidence = format_passages(retry_passages)
+                retry_passages = tag_passages_with_grade(retry_passages)
+                retry_evidence = format_passages_with_grade(retry_passages)
 
                 retry_prompt = PROMPT_TEMPLATE
                 retry_prompt = retry_prompt.replace(
@@ -789,7 +823,7 @@ def run_inference(notes_df, encoder, chunk_vecs, chunks,
                     "<<NOTE_TEXT>>", note_text)
 
                 try:
-                    rc = generate(retry_prompt, tokenizer, model)
+                    rc, _ = generate(retry_prompt, tokenizer, model)
                     rp, rr = safe_json_loads(rc)
                     if rp:
                         if isinstance(rp, dict):
@@ -838,7 +872,7 @@ def run_inference(notes_df, encoder, chunk_vecs, chunks,
                   f"nested_recovered={nested_recovered}")
 
     exp_df = pd.DataFrame(rows)
-    exp_df.to_csv("exp7_outputs_raw.csv", index=False)
+    exp_df.to_csv(os.environ.get("EXP7_RAW","exp7_outputs_raw.csv"), index=False)
     n_failed = exp_df["exp_output_dict"].apply(
         lambda x: not isinstance(x, dict)).sum()
 
@@ -852,6 +886,12 @@ def run_inference(notes_df, encoder, chunk_vecs, chunks,
         exp_df["exp_output_dict"].apply(lambda x: isinstance(x, dict))
     ].copy().reset_index(drop=True)
     print(f"Valid rows: {len(valid_df)}/{len(exp_df)}")
+    _fl = globals().get("_PARSE_FAIL_LOG", [])
+    if _fl:
+        import json as _json
+        _json.dump(_fl, open("exp7_parse_failures.json","w"), indent=2)
+        _ntrunc = sum(1 for x in _fl if x["brace_open"] != x["brace_close"])
+        print(f"[PARSE] {len(_fl)} failures; {_ntrunc} look truncated (unbalanced braces)")
     return valid_df
 
 def run_metrics(valid_df):
@@ -913,7 +953,7 @@ def run_metrics(valid_df):
                     metric_df.at[i, bert_col] = val
         print("BERTScore done.")
 
-    metric_df.to_csv("exp7_note_level_metrics.csv", index=False)
+    metric_df.to_csv(os.environ.get("EXP7_METRICS","exp7_note_level_metrics.csv"), index=False)
 
     summary_rows = []
     for symptom, conf_key, inf_key in SYMPTOM_SPECS:
