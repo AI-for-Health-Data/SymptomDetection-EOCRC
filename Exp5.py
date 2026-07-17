@@ -199,6 +199,7 @@ def to_num(x):
     m = re.search(r"-?\d+(?:\.\d+)?", str(x))
     return float(m.group()) if m else np.nan
 
+
 _token_pat = re.compile(r"\w+|\S")
 
 def simple_tokenize(text):
@@ -231,6 +232,7 @@ def compute_bleu_no_bp(ref, hyp, max_n=4):
         log_precs.append(math.log(p))
     return math.exp(sum(log_precs) / len(log_precs))
 
+
 def compute_bertscore_batch(refs, hyps):
     if not refs:
         return []
@@ -239,6 +241,7 @@ def compute_bertscore_batch(refs, hyps):
                            batch_size=16, verbose=False)
     return [float(x) for x in P]
 
+
 def strip_code_fences(s):
     s = s.strip()
     if s.startswith("```"):
@@ -246,6 +249,7 @@ def strip_code_fences(s):
         if s.endswith("```"):
             s = s[:-3].strip()
     return s
+
 
 def extract_first_json_object(s):
     s = strip_code_fences(s)
@@ -451,6 +455,7 @@ def run_extraction(notes_df, umls_synonyms, show_notes=3):
     print("\n" + "="*65)
     print("PHASE 1 - UMLS Concept Extraction")
     print("="*65)
+
     lookup = build_combined_lookup(umls_synonyms)
     print(f"MANUAL aliases:   {sum(len(v) for v in MANUAL_ALIASES.values())} terms")
     print(f"UMLS synonyms:    {sum(len(v) for v in umls_synonyms.values())} terms")
@@ -638,11 +643,11 @@ def load_llama(model_id=HF_MODEL_ID):
     print(f"\nLoading: {model_id}")
     if torch.cuda.is_available():
         print(f"GPU: {torch.cuda.get_device_name(0)}")
-    tokenizer = AutoTokenizer.from_pretrained(model_id, trust_remote_code=True)
+    tokenizer = AutoTokenizer.from_pretrained(model_id, trust_remote_code=True, cache_dir="/lustre/smuexa01/client/users/nikkieh/hf_cache")
     tokenizer.pad_token = tokenizer.eos_token
     model = AutoModelForCausalLM.from_pretrained(
         model_id, torch_dtype=torch.float16,
-        device_map="auto", trust_remote_code=True)
+        device_map="auto", trust_remote_code=True, cache_dir="/lustre/smuexa01/client/users/nikkieh/hf_cache")
     model.eval()
     print("Model loaded")
     return tokenizer, model
@@ -727,6 +732,7 @@ def compute_metrics(valid_df):
     count_df = pd.DataFrame(count_rows)
     count_df.to_csv("experiment3_yes_counts.csv", index=False)
 
+    # Unpack JSON
     metric_df = valid_df.copy()
     for symptom, conf_key, inf_key in SYMPTOM_SPECS:
         metric_df[symptom]  = metric_df["exp3_output_dict"].apply(
@@ -806,6 +812,7 @@ def compute_metrics(valid_df):
     summary_table = pd.DataFrame(summary_rows)
     summary_table.to_csv("experiment3_summary_table.csv", index=False)
 
+    # TABLE I
     print("\n" + "="*65)
     print("TABLE I - POSITIVE SYMPTOM DETECTION COUNTS (EXPERIMENT 3)")
     print("="*65)
@@ -815,6 +822,7 @@ def compute_metrics(valid_df):
         print(f"  {r['Symptom']:<44} {int(r['Yes_Count']):>6} {int(r['No_Count']):>6}")
     print(f"\n  {'TOTAL YES':<44} {int(summary_table['Yes_Count'].sum()):>6}")
 
+    # TABLE II
     print("\n" + "="*65)
     print("TABLE II - CONFIDENCE, BLEU, BERTSCORE PRECISION (EXPERIMENT 3)")
     print("Mean +- SD across ALL predictions")
