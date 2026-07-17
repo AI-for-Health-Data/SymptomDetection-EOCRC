@@ -7,7 +7,6 @@ from collections import Counter
 import numpy as np
 import pandas as pd
 from tqdm import tqdm
-import ollama
 
 try:
     from bert_score import score as bert_score
@@ -18,7 +17,7 @@ except ModuleNotFoundError:
 
 
 PATH = "rebuilt_notes_by_noteid.csv"   
-MODEL = "llama3:latest"
+MODEL = "meta-llama/Meta-Llama-3.1-8B-Instruct"
 TEMPERATURE = 0
 MAX_NOTE_CHARS = None   
 
@@ -49,7 +48,7 @@ notes_df = notes_df[
 ].reset_index(drop=True)
 
 print(f"Notes loaded and ready for Experiment 1: {len(notes_df)}")
-display(notes_df.head())
+#display(notes_df.head())
 
 PROMPT_TEMPLATE_EXP1 = """
 You are an experienced gastroenterology clinician.
@@ -133,10 +132,14 @@ def safe_json_loads(s: str):
         pass
 
     s1 = s0
+    # missing comma between fields (newline-separated)
     s1 = re.sub(r'("|\d|true|false|null)\s*\n(\s*")', r'\1,\n\2', s1)
+    # trailing commas
     s1 = re.sub(r",\s*([}\]])", r"\1", s1)
+    # smart quotes
     s1 = (s1.replace("\u201c", '"').replace("\u201d", '"')
              .replace("\u2018", "'").replace("\u2019", "'"))
+    # unquoted N/A values — e.g.  : N/A,  or  : N/A\n
     s1 = re.sub(r':\s*N/A(\s*[,\n}\]])', r': "N/A"\1', s1)
     s1 = re.sub(r':\s*None(\s*[,\n}\]])', r': "None"\1', s1)
     s1 = re.sub(r':\s*n/a(\s*[,\n}\]])', r': "N/A"\1', s1)
@@ -165,19 +168,39 @@ def normalize_answer(x):
     return str(x).strip().lower()
 
 
+
+import torch
+from transformers import AutoTokenizer, AutoModelForCausalLM
+_CACHE = "/lustre/smuexa01/client/users/nikkieh/hf_cache"
+print(f"Loading {MODEL}...")
+_tokenizer = AutoTokenizer.from_pretrained(MODEL, trust_remote_code=True, cache_dir=_CACHE)
+_tokenizer.pad_token = _tokenizer.eos_token
+_model = AutoModelForCausalLM.from_pretrained(
+    MODEL, torch_dtype=torch.float16,
+    device_map="auto", trust_remote_code=True, cache_dir=_CACHE)
+_model.eval()
+print(f"Model loaded on {next(_model.parameters()).device}")
+
 rows = []
 
 for _, row in tqdm(notes_df.iterrows(), total=len(notes_df), desc="Running Experiment 1"):
     note_text = maybe_truncate(row["Clean_note_text"], MAX_NOTE_CHARS)
     prompt = PROMPT_TEMPLATE_EXP1.replace("<<NOTE_TEXT>>", note_text)
+    messages = [{"role": "user", "content": prompt}]
+    try:
+        formatted = _tokenizer.apply_chat_template(
+            messages, tokenize=False, add_generation_prompt=True)
+    except Exception:
+        formatted = f"<|user|>\n{prompt}\n<|assistant|>\n"
+    inputs = _tokenizer(formatted, return_tensors="pt",
+                        truncation=True, max_length=8192).to(_model.device)
+    with torch.no_grad():
+        outputs = _model.generate(
+            **inputs, max_new_tokens=1024,
+            do_sample=False, pad_token_id=_tokenizer.eos_token_id)
+    new_tokens = outputs[0][inputs["input_ids"].shape[1]:]
+    content = _tokenizer.decode(new_tokens, skip_special_tokens=True).strip()
 
-    resp = ollama.chat(
-        model=MODEL,
-        messages=[{"role": "user", "content": prompt}],
-        options={"temperature": TEMPERATURE}
-    )
-
-    content = resp["message"]["content"].strip()
     parsed, raw_json = safe_json_loads(content)
 
     out = row.to_dict()
@@ -188,11 +211,12 @@ for _, row in tqdm(notes_df.iterrows(), total=len(notes_df), desc="Running Exper
 exp1_df = pd.DataFrame(rows)
 exp1_df.to_csv("experiment1_outputs_raw.csv", index=False)
 print("Saved raw Exp1 outputs: experiment1_outputs_raw.csv")
-display(exp1_df.head())
+#display(exp1_df.head())
 
 # keep only valid parsed outputs
 valid_df = exp1_df[exp1_df["exp1_output_dict"].apply(lambda x: isinstance(x, dict))].copy()
 print(f"Valid parsed outputs: {len(valid_df)} / {len(exp1_df)}")
+
 
 symptom_specs = [
     ("Abdominal pain", "Abdominal pain confidence", "Abdominal pain inference"),
@@ -218,7 +242,8 @@ count_df = pd.DataFrame(count_rows)
 count_df.to_csv("experiment1_yes_counts.csv", index=False)
 
 print("\nPositive counts:")
-display(count_df)
+#display(count_df)
+
 
 token_pattern = re.compile(r"\w+|\S")
 
@@ -339,7 +364,7 @@ summary_table = pd.DataFrame(summary_rows)
 summary_table.to_csv("experiment1_summary_table.csv", index=False)
 
 print("\nExperiment 1 summary table:")
-display(summary_table)
+#display(summary_table)
 
 print("\nPretty summary:")
 for _, r in summary_table.iterrows():
