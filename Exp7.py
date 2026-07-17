@@ -43,7 +43,6 @@ CHUNKS_PATH = os.environ.get(
 MEDCPT_QUERY_MODEL = "ncbi/MedCPT-Query-Encoder"
 MEDCPT_ARTICLE_MODEL = "ncbi/MedCPT-Article-Encoder"
 
-# All output names can be redirected so runs never overwrite one another.
 OUT_RAW = os.environ.get("EXP7_RAW", "exp7_outputs_raw.csv")
 OUT_METRICS = os.environ.get(
     "EXP7_METRICS", "exp7_note_level_metrics.csv"
@@ -72,7 +71,6 @@ CHECKPOINT_EVERY = 25
 MAX_GROUP_B_IN_QUERY = 3
 MAX_GROUP_B_IN_PROMPT = 10
 
-# GRADE-inspired source-design screening.
 ALL_SOURCE_TIERS = [
     "HIGH",
     "MODERATE",
@@ -143,7 +141,6 @@ BAD_INFERENCE_VALS = {
     "only in ros-negative context",
     "only ros-negative, nowhere else",
 }
-
 
 DIRECT_ALIASES: Dict[str, List[str]] = {
     "Abdominal pain": [
@@ -317,6 +314,7 @@ DIRECT_ALIASES: Dict[str, List[str]] = {
     ],
 }
 
+
 RETRIEVAL_EXTRA_TERMS: Dict[str, List[str]] = {
     "Abdominal pain": [
         "cramping",
@@ -378,6 +376,7 @@ RETRIEVAL_EXTRA_TERMS: Dict[str, List[str]] = {
         "hereditary colorectal cancer",
     ],
 }
+
 
 VERY_LOW_SOURCE_PATTERNS: List[Tuple[str, str]] = [
     (r"\bcase report\b", "case report"),
@@ -794,6 +793,7 @@ def build_query_variants(
             seen.add(normalized.lower())
     return unique
 
+
 def retrieve_with_rrf(
     encoder: MedCPTEncoder,
     chunk_vectors: np.ndarray,
@@ -1078,7 +1078,6 @@ def explicit_family_history_crc(note_text: str) -> bool:
     non_ros, _ = split_note_ros(note_text)
     text = non_ros.lower()
     return any(re.search(pattern, text) for pattern in FH_PATTERNS)
-
 
 def build_alias_section(direct_vocab: Mapping[str, Sequence[str]]) -> str:
     lines = []
@@ -1627,7 +1626,6 @@ def compute_bertscore_batch(
     )
     return [float(value) for value in precision]
 
-
 def load_llama(model_id: str = HF_MODEL_ID) -> Tuple[Any, Any]:
     import torch
     from transformers import AutoModelForCausalLM, AutoTokenizer
@@ -1715,6 +1713,7 @@ def maybe_truncate(text: Any, max_chars: int = NOTE_CHAR_LIMIT) -> str:
     first_half = available // 2
     second_half = available - first_half
     return value[:first_half] + separator + value[-second_half:]
+
 
 def _row_identifier(row: pd.Series, fallback_index: int) -> Any:
     if "NOTE_ID" in row and pd.notna(row.get("NOTE_ID")):
@@ -2373,7 +2372,6 @@ def run_metrics(experiment_df: pd.DataFrame, skip_bertscore: bool = False) -> pd
     print(f"\nMetrics written to: {OUT_METRICS}")
     print(f"Summary written to: {OUT_SUMMARY}")
     return summary_df
-
 
 def main() -> None:
     parser = argparse.ArgumentParser(
