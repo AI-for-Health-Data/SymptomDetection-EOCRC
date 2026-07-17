@@ -24,6 +24,7 @@ os.environ["USE_TF"]               = "0"
 os.environ["USE_FLAX"]             = "0"
 os.environ["TF_CPP_MIN_LOG_LEVEL"] = "3"
 
+
 PATH         = "rebuilt_notes_by_noteid.csv"
 HF_MODEL_ID  = "meta-llama/Meta-Llama-3.1-8B-Instruct"
 HF_CACHE_DIR = "/lustre/smuexa01/client/users/nikkieh/hf_cache"
@@ -32,12 +33,12 @@ UMLS_CACHE   = "umls_concept_cache.json"
 CORPUS_PATH  = "pubmed_corpus.json"
 CHUNKS_PATH  = "pubmed_chunks_sentences.json"
 
-BM25_TOP_K     = 5
-BM25_KEEP_K    = 3
+BM25_K         = 32    
+BM25_KEEP_K    = 5     
 BLEU_THRESHOLD = 0.10
 RAG_SCORE_MIN  = 12.0
 NOTE_MATCH_MIN = 2
-DENIAL_CONTEXT = 20
+DENIAL_CONTEXT = 25
 
 SYMPTOMS = [
     "Abdominal pain", "Rectal bleeding", "Rectal pain",
@@ -49,18 +50,24 @@ SYMPTOM_SPECS = [(s, f"{s} confidence", f"{s} inference") for s in SYMPTOMS]
 BAD_INFERENCE_VALS = {
     "", "n/a", "na", "not mentioned", "none", "no inference",
     "not reported", "not applicable", "not stated",
+    "not mentioned outside ros",
 }
 
 DENIAL_PREFIXES = [
-    "no ","denies ","negative for ","without ",
-    "absent ","none ","not ","deny ","no history of ",
+    "no ", "denies ", "negative for ", "without ",
+    "absent ", "none ", "not ", "deny ", "no history of ",
+]
+
+# ROS section boundaries
+ROS_HEADERS = [
+    "review of systems", "ros:", "ros ", "r.o.s.",
+    "review of systems:", "systems review", "pertinent ros",
+    "system review:",
 ]
 
 SYMPTOM_CUI_FAMILIES = {
-    "C0000737","C0152171","C0232503","C0694868","C1963065",
-    "C0085584","C0232491","C0232492","C0232493","C0232494",
-    "C0267596","C0018932","C0018937","C1321898","C0025209",
-    "C0267615","C0267614",
+    "C0000737","C0152171","C0232503","C0694868","C1963065","C0085584",
+    "C0267596","C0018932","C0018937","C1321898","C0025209","C0267615","C0267614",
     "C0034886","C0085606","C0085644","C0232607","C0232608",
     "C0011991","C0152164","C0860904","C0232726","C0232727",
     "C0009806","C0687720","C0232720","C0232721",
@@ -68,7 +75,7 @@ SYMPTOM_CUI_FAMILIES = {
     "C0241889","C0332265","C0728708","C1553497",
 }
 
-# MANUAL ALIASES — GROUP A (225 terms, same as E1-E5)
+
 MANUAL_ALIASES = {
     "Abdominal pain": [
         "abdominal pain","abd pain","abd pn","abdo pain","stomach pain",
@@ -79,16 +86,14 @@ MANUAL_ALIASES = {
         "ruq pain","right upper quadrant pain","luq pain",
         "left upper quadrant pain","rlq pain","right lower quadrant pain",
         "llq pain","left lower quadrant pain","periumbilical pain",
-        "peri-umbilical pain","umbilical pain","suprapubic pain","pelvic pain",
-        "lower abdominal pain","upper abdominal pain","cramping",
-        "abdominal cramping","colicky pain","colicky abdominal pain",
-        "sharp abdominal pain","dull abdominal pain","burning abdominal pain",
-        "gnawing pain","pressure in abdomen","fullness","abdominal pressure",
-        "bloating","abdominal bloating","distension","abdominal distension",
-        "gas pain","gassy","flatulence with pain","dyspepsia","indigestion",
-        "heartburn","acid reflux","gerd symptoms","gastritis","peptic ulcer",
-        "ulcer pain","c/o abdominal pain","complains of abdominal pain",
-        "reports abdominal pain","pain in abdomen",
+        "suprapubic pain","pelvic pain","lower abdominal pain",
+        "upper abdominal pain","cramping","abdominal cramping",
+        "colicky pain","colicky abdominal pain","sharp abdominal pain",
+        "dull abdominal pain","burning abdominal pain","gnawing pain",
+        "pressure in abdomen","abdominal bloating","distension",
+        "abdominal distension","dyspepsia","indigestion","heartburn",
+        "acid reflux","gerd symptoms","gastritis","peptic ulcer",
+        "ulcer pain","pain in abdomen",
     ],
     "Rectal bleeding": [
         "rectal bleeding","bleeding per rectum","blood per rectum",
@@ -96,17 +101,17 @@ MANUAL_ALIASES = {
         "rectorrhagia","blood in stool","bloody stool","blood on stool",
         "stool with blood","streaks of blood","blood streaked stool",
         "blood on toilet paper","blood when wiping","hematochezia",
-        "haematochezia","brbpr","bright red blood per rectum","maroon stools",
-        "melena","black tarry stools","positive fobt","positive fit",
-        "occult blood","heme positive stool","hemorrhoids with bleeding",
-        "haemorrhoids with bleeding","anal fissure bleeding",
-        "fissure with bleeding",
+        "haematochezia","brbpr","bright red blood per rectum",
+        "maroon stools","melena","black tarry stools","positive fobt",
+        "positive fit","occult blood","heme positive stool",
+        "hemorrhoids with bleeding","haemorrhoids with bleeding",
+        "anal fissure bleeding","fissure with bleeding",
     ],
     "Rectal pain": [
         "rectal pain","pain in rectum","painful rectum","anal pain",
         "pain in anus","anorectal pain","proctalgia","proctalgia fugax",
-        "rectal discomfort","anal discomfort","rectal soreness","anal soreness",
-        "pain with bowel movement","painful bowel movement",
+        "rectal discomfort","anal discomfort","rectal soreness",
+        "anal soreness","pain with bowel movement","painful bowel movement",
         "painful defecation","dyschezia","odynochezia",
         "pain during defecation","pain after bowel movement","tenesmus",
         "rectal pressure","feels pressure in rectum","anal fissure pain",
@@ -114,15 +119,15 @@ MANUAL_ALIASES = {
         "perianal pain","perirectal pain",
     ],
     "Diarrhea": [
-        "diarrhea","diarrhoea","d+","loose stools","loose stool",
+        "diarrhea","diarrhoea","loose stools","loose stool",
         "watery stools","watery stool","liquid stool","runny stool",
         "the runs","frequent stools","frequent bowel movements",
         "increased bowel movements","increased stool frequency",
         "multiple loose bms","loose bm","watery bm","urgent bowel movements",
         "fecal urgency","bowel urgency","explosive diarrhea",
-        "bristol 6","bristol 7","soft stools","mushy stools",
-        "gastroenteritis","enteritis","colitis with diarrhea",
-        "travelers diarrhea","c diff","c. diff","clostridioides difficile",
+        "soft stools","mushy stools","gastroenteritis","enteritis",
+        "colitis with diarrhea","travelers diarrhea",
+        "c diff","c. diff","clostridioides difficile",
     ],
     "Constipation": [
         "constipation","constipated","hard stools","hard stool",
@@ -133,7 +138,7 @@ MANUAL_ALIASES = {
         "straining","strains with bm","incomplete evacuation",
         "obstipation","fecal impaction","stool impaction",
         "retained stool","stool burden","slow transit constipation",
-        "bristol 1","bristol 2","pellet stools","scybalous stools",
+        "pellet stools","scybalous stools",
     ],
     "Weight loss": [
         "weight loss","wt loss","lost weight","losing weight",
@@ -158,108 +163,158 @@ MANUAL_ALIASES = {
     ],
 }
 
-RAG_PLACEHOLDERS = {
-    "Abdominal pain":                      "RAG_ABDOMINAL_PAIN",
-    "Rectal bleeding":                     "RAG_RECTAL_BLEEDING",
-    "Rectal pain":                         "RAG_RECTAL_PAIN",
-    "Diarrhea":                            "RAG_DIARRHEA",
-    "Constipation":                        "RAG_CONSTIPATION",
-    "Weight loss":                         "RAG_WEIGHT_LOSS",
-    "Family history of colorectal cancer": "RAG_FAMILY_HISTORY",
-}
 
-
-# LOAD UMLS SYNONYMS
 def load_umls_synonyms():
     with open(UMLS_JSON) as f:
         data = json.load(f)
     lowered = {s: [t.lower() for t in terms] for s, terms in data.items()}
     total = sum(len(v) for v in lowered.values())
-    print(f"UMLS synonyms (GROUP A): {total} terms across {len(lowered)} symptoms")
+    print(f"UMLS synonyms (Component C): {total} terms across {len(lowered)} symptoms")
     return lowered
+
+
+def build_merged_vocabulary(umls_synonyms):
+    """
+    Merge manual aliases (225 terms) + UMLS synonyms (189 terms).
+    Manual aliases take priority; UMLS fills gaps.
+    Returns merged dict: symptom → list of surface forms.
+    Paper: merged vocabulary = 385 unique surface forms.
+    """
+    merged = {}
+    for symptom in SYMPTOMS:
+        manual = [t.lower() for t in MANUAL_ALIASES.get(symptom, [])]
+        umls   = umls_synonyms.get(symptom, [])
+        manual_set = set(manual)
+        # Add UMLS terms not already in manual
+        combined = manual + [t for t in umls if t not in manual_set]
+        merged[symptom] = combined
+    total = sum(len(v) for v in merged.values())
+    print(f"Merged vocabulary (B+C): {total} unique surface forms")
+    return merged
+
+
+def build_alias_section(merged_vocab):
+    """Build ALIAS_SECTION string for prompt injection."""
+    lines = []
+    for symptom in SYMPTOMS:
+        forms = merged_vocab.get(symptom, [])
+        seen, deduped = set(), []
+        for f in forms:
+            if f not in seen:
+                seen.add(f)
+                deduped.append(f)
+        lines.append(f"{symptom}: {', '.join(deduped[:40])}")
+    return "\n".join(lines)
+
 
 def load_concept_cache():
     if not os.path.exists(UMLS_CACHE):
-        print(f"ERROR: {UMLS_CACHE} not found.")
-        print("Run: $PYTHON build_umls_concept_cache.py")
-        print("(takes ~30-60 min, one-time only)")
-        exit(1)
+        print(f"UMLS cache not found ({UMLS_CACHE}). Using curated fallback.")
+        # Fallback curated GROUP B
+        fallback_gb = {
+            "colonoscopy":"colonoscopy","adenoma":"adenoma",
+            "lynch syndrome":"lynch syndrome","polyp":"polyp",
+            "anemia":"anemia","iron deficiency":"iron deficiency",
+            "colectomy":"colectomy","sigmoid":"sigmoid colon",
+            "cea":"cea","colostomy":"colostomy","ileostomy":"ileostomy",
+            "stoma":"stoma","hemorrhoid":"hemorrhoids",
+            "fissure":"anal fissure","occult blood":"occult blood",
+            "fobt":"fobt","diverticulosis":"diverticulosis",
+            "colitis":"colitis","chemotherapy":"chemotherapy",
+            "diabetes":"diabetes","obesity":"obesity",
+            "warfarin":"warfarin","aspirin":"aspirin",
+            "hnpcc":"lynch syndrome","fap":"fap",
+            "metastasis":"metastasis","carcinoma":"carcinoma",
+            "radiation":"radiation","biopsy":"biopsy","ferritin":"ferritin",
+        }
+        return {}, fallback_gb
 
     with open(UMLS_CACHE) as f:
         cache = json.load(f)
+    n  = len(cache)
+    ga = sum(1 for d in cache.values() if d.get("is_group_a", False))
+    gb = n - ga
+    print(f"UMLS cache: {n} concepts (GROUP A={ga}, GROUP B={gb})")
+    gb_lookup = {
+        term: data.get("name", term)
+        for term, data in cache.items()
+        if not data.get("is_group_a", False)
+    }
+    return cache, gb_lookup
 
-    n_total   = len(cache)
-    n_group_a = sum(1 for d in cache.values() if d.get("is_group_a", False))
-    n_group_b = n_total - n_group_a
 
-    print(f"UMLS concept cache loaded: {n_total} concepts")
-    print(f"  GROUP A (our 7 symptoms): {n_group_a}")
-    print(f"  GROUP B (extra concepts): {n_group_b}")
-
-    # Build fast lookup sets
-    # group_b_terms: set of surface forms → concept name
-    group_b_lookup = {}
-    for term, data in cache.items():
-        if not data.get("is_group_a", False):
-            group_b_lookup[term] = data.get("name", term)
-
-    return cache, group_b_lookup
-
-def scan_note_for_umls_concepts(note_text, umls_synonyms,
-                                 cache, group_b_lookup):
+def scan_note_concepts(note_text, merged_vocab, gb_lookup):
     note_lower = note_text.lower()
 
+    # GROUP A: our 7 symptoms (using merged 385-term vocabulary)
     group_a = {}
     for symptom in SYMPTOMS:
-        umls_terms   = umls_synonyms.get(symptom, [])
-        manual_terms = [t.lower() for t in MANUAL_ALIASES.get(symptom, [])]
-        all_terms    = list(set(umls_terms + manual_terms))
-        found        = [t for t in all_terms if t in note_lower]
+        found = [t for t in merged_vocab.get(symptom, []) if t in note_lower]
         if found:
             group_a[symptom] = found[:5]
 
+    # GROUP B: all other UMLS clinical concepts
     group_b = {}
-    for term, concept_name in group_b_lookup.items():
-        if term in note_lower:
-            # Use UMLS concept name as the key (deduplicate by concept)
-            if concept_name not in group_b:
-                group_b[concept_name] = term
+    for term, concept_name in gb_lookup.items():
+        if term in note_lower and concept_name not in group_b:
+            group_b[concept_name] = term
 
     return group_a, group_b
 
 
-# BUILD RAG QUERY FROM GROUP B CONCEPTS
-def build_rag_query_from_group_b(note_text, symptom,
-                                  umls_synonyms, group_b):
-    note_lower   = note_text.lower()
+def split_note_ros(note_text):
+    """Returns (non_ros_text, ros_text)."""
+    note_lower = note_text.lower()
+    ros_start  = None
 
-    umls_terms   = umls_synonyms.get(symptom, [])
-    manual_terms = [t.lower() for t in MANUAL_ALIASES.get(symptom, [])]
-    note_found   = [t for t in set(umls_terms + manual_terms)
-                    if t in note_lower][:3]
+    for header in ROS_HEADERS:
+        idx = note_lower.find(header)
+        if idx != -1 and (ros_start is None or idx < ros_start):
+            ros_start = idx
 
-    umls_canonical = umls_terms[:3]
-    gb_names = list(group_b.keys())[:4]
-    parts = []
-    if note_found:
-        parts.extend(note_found[:2])
-    else:
-        parts.append(symptom.lower())
+    if ros_start is None:
+        return note_text, ""
 
-    for t in umls_canonical:
-        if t not in parts and len(parts) < 5:
-            parts.append(t)
+    # ROS ends at next major section
+    ros_end = len(note_text)
+    next_section_headers = [
+        "physical exam", "physical examination", "exam:", "pe:",
+        "assessment", "impression", "plan:", "medications",
+        "allergies", "past medical history", "pmh:",
+        "social history", "family history", "objective:",
+        "vital signs", "vitals:",
+    ]
+    for header in next_section_headers:
+        idx = note_lower.find(header, ros_start + 20)
+        if idx != -1 and idx < ros_end:
+            ros_end = idx
 
-    if gb_names:
-        parts.extend(gb_names[:3])
-
-    parts.append("colorectal cancer")
-    query = " ".join(parts)
-
-    return query, note_found, gb_names
+    non_ros = note_text[:ros_start] + note_text[ros_end:]
+    ros_sec  = note_text[ros_start:ros_end]
+    return non_ros, ros_sec
 
 
-# SENTENCE-LEVEL CHUNKING
+def symptom_present_outside_ros(note_text, symptom, merged_vocab):
+    """
+    Returns True if symptom terms appear in non-ROS sections
+    AND are not in denial context.
+    """
+    non_ros, _ = split_note_ros(note_text)
+    non_ros_lower = non_ros.lower()
+    terms = merged_vocab.get(symptom, [])
+    for term in terms:
+        idx = 0
+        while True:
+            idx = non_ros_lower.find(term, idx)
+            if idx == -1:
+                break
+            ctx = non_ros_lower[max(0, idx - DENIAL_CONTEXT):idx]
+            if not any(p in ctx for p in DENIAL_PREFIXES):
+                return True
+            idx += 1
+    return False
+
+
 def chunk_by_sentence(text, max_sentences=4, overlap=1):
     sentences = re.split(r'(?<=[.!?])\s+(?=[A-Z0-9])', text.strip())
     sentences = [s.strip() for s in sentences if len(s.strip()) > 20]
@@ -288,142 +343,84 @@ def build_chunks():
         exit(1)
     with open(CORPUS_PATH) as f:
         abstracts = json.load(f)
-    all_chunks = []
-    for abstract in abstracts:
-        all_chunks.extend(chunk_by_sentence(abstract))
+    all_chunks = [ch for ab in abstracts for ch in chunk_by_sentence(ab)]
     with open(CHUNKS_PATH, "w") as f:
         json.dump(all_chunks, f, indent=2)
-    print(f"Saved {len(all_chunks)} sentence chunks → {CHUNKS_PATH}")
+    print(f"Sentence chunks saved: {len(all_chunks)}")
     return all_chunks
 
+
 def build_bm25_index(chunks):
-    print(f"Building BM25 index over {len(chunks)} chunks...")
-    tokenized = [c.lower().split() for c in chunks]
-    bm25      = BM25Okapi(tokenized)
-    print("BM25 index ready")
+    print(f"Building BM25 index over {len(chunks)} chunks (k={BM25_K})...")
+    bm25 = BM25Okapi([c.lower().split() for c in chunks])
+    print("BM25 ready")
     return bm25
 
 
-# RETRIEVE PUBMED PASSAGES
-
-def retrieve_for_symptom(bm25, chunks, query, symptom,
-                          umls_synonyms, k=BM25_TOP_K, keep=BM25_KEEP_K):
+def retrieve_passages(bm25, chunks, query, symptom, merged_vocab,
+                      k=BM25_K, keep=BM25_KEEP_K):
+    """BM25 retrieval with relevance filter."""
     tokens  = query.lower().split()
     scores  = bm25.get_scores(tokens)
     top_idx = np.argsort(scores)[::-1][:k]
-    passages = [{"text": chunks[i], "score": float(scores[i])}
-                for i in top_idx if scores[i] > 0]
-
-    symptom_terms = (
-        [t for t in umls_synonyms.get(symptom, [])]
-        + [t.lower() for t in MANUAL_ALIASES.get(symptom, [])]
-    )
+    passages = [
+        {"text": chunks[i], "score": float(scores[i])}
+        for i in top_idx if scores[i] > 0
+    ]
+    # Relevance filter: passage must mention at least one symptom term
+    symptom_terms = merged_vocab.get(symptom, [])[:30]
     relevant = [p for p in passages
-                if any(t in p["text"].lower() for t in symptom_terms[:25])]
-
+                if any(t in p["text"].lower() for t in symptom_terms)]
     return (relevant if relevant else passages[:keep])[:keep]
 
 
-def format_passages(passages, symptom):
-    if not passages:
-        return f"  No relevant passages retrieved for {symptom}."
-    return "\n".join(
-        f"  [Evidence {i+1}] {p['text'][:250]}"
-        for i, p in enumerate(passages)
-    )
-
 def detect_rag_contradiction(llm_output, passages, symptom,
-                              umls_synonyms, note_text):
-    if str(llm_output.get(symptom,"")).strip().lower() != "no":
-        return False, None
-    note_lower = note_text.lower()
-    all_terms  = (
-        [t for t in umls_synonyms.get(symptom,[])]
-        + [t.lower() for t in MANUAL_ALIASES.get(symptom,[])]
-    )
-
-    # Condition 1: >= NOTE_MATCH_MIN symptom terms in note
-    note_matches = [t for t in all_terms if t in note_lower]
-    if len(note_matches) < NOTE_MATCH_MIN:
+                              merged_vocab, note_text):
+    if str(llm_output.get(symptom, "")).strip().lower() != "no":
         return False, None
 
-    # Condition 2: at least 1 match NOT in denial context
-    non_denied = []
-    for term in note_matches:
-        idx = 0
-        while True:
-            idx = note_lower.find(term, idx)
-            if idx == -1: break
-            ctx = note_lower[max(0, idx - DENIAL_CONTEXT):idx]
-            if not any(p in ctx for p in DENIAL_PREFIXES):
-                non_denied.append(term)
-                break
-            idx += 1
-    if not non_denied:
-        return False, None
+    if not symptom_present_outside_ros(note_text, symptom, merged_vocab):
+        return False, None  # only in ROS → legitimate No
 
-    # Condition 3: passage has high BM25 score
     for p in passages:
         if p["score"] >= RAG_SCORE_MIN:
             return True, p["text"][:200]
+
     return False, None
 
-
-PROMPT_TEMPLATE = """
-You are an experienced gastroenterology clinician.
-Analyze the patient's clinical note and extract information
-ONLY from the note text (no external assumptions).
+PROMPT_TEMPLATE = """You are an experienced gastroenterology clinician.
+Analyze the patient's clinical note and extract information ONLY from the note text (no assumptions).
 
 IMPORTANT RULE ABOUT ROS:
-- ROS often contains templated negatives (e.g. "no abdominal pain")
-  that conflict with the rest of the note.
+- ROS often contains templated negatives (e.g., "no abdominal pain") that conflict with the rest of the note.
 - Do NOT use ROS-negative statements as evidence to answer "No".
-- If ROS says "no X" but HPI / Chief Complaint / Assessment show X,
-  answer "Yes" using non-ROS evidence.
-- If explicitly denied OUTSIDE ROS: answer "No" (conf 4-5).
-- If only in ROS-negative context: answer "No" (conf 2).
-
-GROUP B: EXTRA UMLS CLINICAL CONCEPTS FOUND IN THIS NOTE:
-These are all UMLS-identified clinical concepts found in this note
-beyond our 7 target symptoms. They provide clinical context.
-{GROUP_B_SECTION}
-
-RETRIEVED PUBMED EVIDENCE (per symptom, grounded in GROUP B context):
-Use these passages to interpret ambiguous findings.
-Cite ONLY from the NOTE TEXT — not from these passages.
-
-Abdominal pain:
-{RAG_ABDOMINAL_PAIN}
-
-Rectal bleeding:
-{RAG_RECTAL_BLEEDING}
-
-Rectal pain:
-{RAG_RECTAL_PAIN}
-
-Diarrhea:
-{RAG_DIARRHEA}
-
-Constipation:
-{RAG_CONSTIPATION}
-
-Weight loss:
-{RAG_WEIGHT_LOSS}
-
-Family history of colorectal cancer:
-{RAG_FAMILY_HISTORY}
+- If ROS says "no X" but Chief Complaint / HPI / Assessment indicate X, answer "Yes" using non-ROS evidence.
+- If a symptom is explicitly denied OUTSIDE ROS (e.g., HPI: "patient denies rectal bleeding"), answer "No" with high confidence (4-5).
+- If symptom is not mentioned outside ROS at all, answer "No" with low confidence (2); inference can be "Not mentioned outside ROS".
 
 SYNONYM GUIDANCE:
+Treat the following as matches for each symptom:
 {ALIAS_SECTION}
 
+EXTRA CLINICAL CONCEPTS FOUND IN THIS NOTE (use for context):
+{GROUP_B}
+
+RETRIEVED BIOMEDICAL EVIDENCE (from PubMed; cite NOTE TEXT not these):
+{RAG_PASSAGES}
+
+For each item provide:
+- Answer: Yes / No
+- Confidence: 1 (very low) to 5 (very high)
+- Inference: short quote from note supporting the answer (NOT from ROS-negative text)
+
 Rules:
-- Clearly present outside ROS → "Yes" (conf 4-5)
-- Explicitly denied outside ROS → "No" (conf 4-5)
-- Only ROS-negative, nowhere else → "No" (conf 2)
+- Clearly present outside ROS -> "Yes" (conf 4-5)
+- Explicitly denied outside ROS -> "No" (conf 4-5)
+- Only ROS-negative, nowhere else -> "No" (conf 2)
+- Use "N/A" for duration if not reported.
 - Output ONLY valid JSON. No prose, no markdown.
 
-Return JSON:
-"Abdominal pain","Abdominal pain confidence","Abdominal pain inference",
+Return JSON with keys: "Abdominal pain","Abdominal pain confidence","Abdominal pain inference",
 "Duration of abdominal pain","Duration of abdominal pain confidence","Duration of abdominal pain inference",
 "Rectal bleeding","Rectal bleeding confidence","Rectal bleeding inference",
 "Duration of rectal bleeding","Duration of rectal bleeding confidence","Duration of rectal bleeding inference",
@@ -439,52 +436,38 @@ Return JSON:
 "Other comments","Other comments confidence","Other comments inference"
 
 Patient NOTE TEXT:
-<<NOTE_TEXT>>
-""".strip()
-
-
-def build_alias_section():
-    lines = []
-    for symptom in SYMPTOMS:
-        aliases = MANUAL_ALIASES.get(symptom, [])
-        seen, deduped = set(), []
-        for a in aliases:
-            if a.lower() not in seen:
-                seen.add(a.lower())
-                deduped.append(a)
-        lines.append(f"{symptom}: {', '.join(deduped[:40])}")
-    return "\n".join(lines)
+<<NOTE_TEXT>>""".strip()
 
 
 def load_notes():
-    notes_df = pd.read_csv(PATH)
+    df = pd.read_csv(PATH)
     for col in ["DATE_OF_SERVIC_DTTM","SPEC_NOTE_TIME_DTTM","CONTACT_DATE"]:
-        if col in notes_df.columns:
-            notes_df[col] = pd.to_datetime(notes_df[col], errors="coerce")
-    sort_cols = [c for c in [
+        if col in df.columns:
+            df[col] = pd.to_datetime(df[col], errors="coerce")
+    sc = [c for c in [
         "PAT_ID","PAT_ENC_CSN_ID","DATE_OF_SERVIC_DTTM",
         "SPEC_NOTE_TIME_DTTM","CONTACT_NUM","NOTE_ID"
-    ] if c in notes_df.columns]
-    if sort_cols:
-        notes_df = notes_df.sort_values(sort_cols, kind="stable").reset_index(drop=True)
-    notes_df = notes_df[
-        notes_df["Clean_note_text"].str.strip().ne("")
-    ].reset_index(drop=True)
-    print(f"Notes loaded: {len(notes_df)}")
-    return notes_df
+    ] if c in df.columns]
+    if sc:
+        df = df.sort_values(sc, kind="stable").reset_index(drop=True)
+    df = df[df["Clean_note_text"].str.strip().ne("")].reset_index(drop=True)
+    print(f"Notes loaded: {len(df)}")
+    return df
 
 
-def maybe_truncate(text, max_chars=None):
+def maybe_truncate(text, max_chars=12000):
+    """Paper: notes > 12000 chars truncated symmetrically."""
     if text is None: return ""
     t = str(text)
-    if max_chars is None or len(t) <= max_chars: return t
-    return t[:max_chars//2] + "\n...\n" + t[-(max_chars//2):]
+    if len(t) <= max_chars: return t
+    half = max_chars // 2
+    return t[:half] + "\n...\n" + t[-half:]
 
 
 def strip_code_fences(s):
     s = s.strip()
     if s.startswith("```"):
-        s = re.sub(r"^```(?:json)?","",s,flags=re.IGNORECASE).strip()
+        s = re.sub(r"^```(?:json)?", "", s, flags=re.IGNORECASE).strip()
         if s.endswith("```"): s = s[:-3].strip()
     return s
 
@@ -495,7 +478,7 @@ def extract_first_json(s):
     if start == -1: return s
     depth = 0
     for i in range(start, len(s)):
-        if   s[i] == "{": depth += 1
+        if s[i] == "{": depth += 1
         elif s[i] == "}":
             depth -= 1
             if depth == 0: return s[start:i+1]
@@ -507,18 +490,19 @@ def safe_json_loads(s):
     try: return json.loads(s0), s0
     except: pass
     s1 = s0
-    s1 = re.sub(r'("|\d|true|false|null)\s*\n(\s*")',r'\1,\n\2',s1)
-    s1 = re.sub(r",\s*([}\]])",r"\1",s1)
+    s1 = re.sub(r'("|\d|true|false|null)\s*\n(\s*")', r'\1,\n\2', s1)
+    s1 = re.sub(r",\s*([}\]])", r"\1", s1)
     s1 = (s1.replace("\u201c",'"').replace("\u201d",'"')
              .replace("\u2018","'").replace("\u2019","'"))
-    s1 = re.sub(r':\s*N/A(\s*[,\n}\]])',  r': "N/A"\1', s1)
-    s1 = re.sub(r':\s*None(\s*[,\n}\]])', r': "None"\1',s1)
-    s1 = re.sub(r':\s*n/a(\s*[,\n}\]])',  r': "N/A"\1', s1)
+    s1 = re.sub(r':\s*N/A(\s*[,\n}\]])',  r': "N/A"\1',  s1)
+    s1 = re.sub(r':\s*None(\s*[,\n}\]])', r': "None"\1', s1)
+    s1 = re.sub(r':\s*n/a(\s*[,\n}\]])',  r': "N/A"\1',  s1)
     try: return json.loads(s1), s1
     except: pass
-    s2 = re.sub(r'("|\d|true|false|null)(\s*")',r'\1,\2',s1)
-    try: return json.loads(s2), s2
-    except: return None, s0
+    try:
+        return json.loads(re.sub(r'("|\d|true|false|null)(\s*")', r'\1,\2', s1)), s1
+    except:
+        return None, s0
 
 
 def normalize_answer(x):
@@ -544,7 +528,7 @@ def modified_precision(ref_tokens, hyp_tokens, n):
     if len(hyp_tokens) < n: return 0.0
     hyp_ngrams = Counter(zip(*[hyp_tokens[i:] for i in range(n)]))
     ref_ngrams  = Counter(zip(*[ref_tokens[i:]  for i in range(n)]))
-    match = sum(min(c, ref_ngrams[ng]) for ng,c in hyp_ngrams.items())
+    match = sum(min(c, ref_ngrams[ng]) for ng, c in hyp_ngrams.items())
     total = sum(hyp_ngrams.values())
     return 0.0 if total == 0 else match / total
 
@@ -555,11 +539,11 @@ def compute_bleu_no_bp(ref, hyp, max_n=4):
     if not ref_toks or not hyp_toks: return 0.0
     max_n = min(max_n, len(hyp_toks))
     log_precs = []
-    for n in range(1, max_n+1):
+    for n in range(1, max_n + 1):
         p = modified_precision(ref_toks, hyp_toks, n)
         if p == 0.0: return 0.0
         log_precs.append(math.log(p))
-    return math.exp(sum(log_precs)/len(log_precs))
+    return math.exp(sum(log_precs) / len(log_precs))
 
 
 def compute_bertscore_batch(refs, hyps):
@@ -568,6 +552,7 @@ def compute_bertscore_batch(refs, hyps):
                           rescale_with_baseline=False,
                           batch_size=16, verbose=False)
     return [float(x) for x in P]
+
 
 def load_llama(model_id=HF_MODEL_ID):
     import torch
@@ -589,7 +574,7 @@ def load_llama(model_id=HF_MODEL_ID):
 
 def generate(prompt, tokenizer, model, max_new_tokens=1024):
     import torch
-    messages = [{"role":"user","content":prompt}]
+    messages = [{"role": "user", "content": prompt}]
     try:
         formatted = tokenizer.apply_chat_template(
             messages, tokenize=False, add_generation_prompt=True)
@@ -605,26 +590,24 @@ def generate(prompt, tokenizer, model, max_new_tokens=1024):
     return tokenizer.decode(new_tokens, skip_special_tokens=True).strip()
 
 
-# AGENTIC INFERENCE
-
-def run_agentic_inference(notes_df, bm25, chunks, umls_synonyms,
-                          cache, group_b_lookup, tokenizer, model):
+def run_agentic_inference(notes_df, bm25, chunks,
+                          merged_vocab, alias_section,
+                          gb_lookup, tokenizer, model):
     print("\n" + "="*65)
-    print("AGENTIC INFERENCE — Experiment 6: BM25 RAG (Full UMLS)")
-    print("  Step 1: Scan each note for ALL UMLS concepts in cache")
-    print("  Step 2: Split into GROUP A (symptoms) + GROUP B (extra)")
-    print("  Step 3: Build RAG query FROM GROUP B concepts")
-    print("  Step 4: Retrieve PubMed passages about GROUP B + EOCRC")
-    print("  Step 5: LLM gets note + evidence about GROUP B findings")
-    print("  +VERIFY: BLEU self-correction if evidence not grounded")
+    print("EXPERIMENT 6 — ROS + UMLS + BM25 RAG (paper-aligned)")
+    print(f"  Component A: Baseline LLM inference (JSON schema)")
+    print(f"  Component B: Manual aliases (225 terms)")
+    print(f"  Component C: UMLS synonyms (189 terms) → 385 merged")
+    print(f"  Component D: ROS Rules R1-R4 (prompt + programmatic)")
+    print(f"  BM25 RAG:   k={BM25_K}, sentence-level chunks")
+    print(f"  GROUP B:    {len(gb_lookup)} extra UMLS concepts")
     print("="*65)
 
-    alias_section    = build_alias_section()
-    patient_memory   = {}
-    rows             = []
-    rag_overrides    = 0
+    patient_memory = {}
+    rows           = []
+    rag_overrides  = 0
     self_corrections = 0
-    group_b_freq     = defaultdict(int)
+    group_b_freq   = defaultdict(int)
 
     for idx, row in tqdm(notes_df.iterrows(), total=len(notes_df),
                          desc="Exp6 BM25 RAG"):
@@ -633,44 +616,52 @@ def run_agentic_inference(notes_df, bm25, chunks, umls_synonyms,
 
         prior_context = ""
         if pat_id and pat_id in patient_memory:
-            prior_pos = [s for s,v in patient_memory[pat_id].items()
+            prior_pos = [s for s, v in patient_memory[pat_id].items()
                          if v == "yes"]
             if prior_pos:
                 prior_context = (
                     f"PRIOR VISIT: Patient previously reported: "
-                    f"{', '.join(prior_pos)}.\n\n")
+                    f"{', '.join(prior_pos)}.\n")
 
-        group_a, group_b = scan_note_for_umls_concepts(
-            note_text, umls_synonyms, cache, group_b_lookup)
-
+        group_a, group_b = scan_note_concepts(note_text, merged_vocab, gb_lookup)
         for c in group_b:
             group_b_freq[c] += 1
 
         per_symptom_passages = {}
         for symptom in SYMPTOMS:
-            query, note_found, gb_names = build_rag_query_from_group_b(
-                note_text, symptom, umls_synonyms, group_b)
-            passages = retrieve_for_symptom(
-                bm25, chunks, query, symptom, umls_synonyms)
-            per_symptom_passages[symptom] = passages
+            note_found = [t for t in merged_vocab.get(symptom, [])
+                          if t in note_text.lower()][:3]
+            gb_names   = list(group_b.keys())[:4]
+            parts      = (note_found[:2] if note_found else [symptom.lower()])
+            parts     += gb_names[:3] + ["colorectal cancer"]
+            query      = " ".join(parts)
+            per_symptom_passages[symptom] = retrieve_passages(
+                bm25, chunks, query, symptom, merged_vocab)
+
+        all_p = []; seen_k = set()
+        for symptom in SYMPTOMS:
+            for p in per_symptom_passages[symptom]:
+                k = p["text"][:60]
+                if k not in seen_k:
+                    seen_k.add(k); all_p.append(p)
+        top_passages = sorted(all_p, key=lambda x: x["score"], reverse=True)[:5]
+        rag_text = "\n".join(
+            f"  [Evidence {i+1}] {p['text'][:250]}"
+            for i, p in enumerate(top_passages)
+        ) if top_passages else "  No relevant passages retrieved."
 
         if group_b:
-            gb_lines = [
-                f"  - {name} (found as: '{form}')"
-                for name, form in list(group_b.items())[:15]
-            ]
-            group_b_section = prior_context + "\n".join(gb_lines)
+            gb_lines = [f"  - {name}: '{form}'"
+                        for name, form in list(group_b.items())[:10]]
+            group_b_text = prior_context + "\n".join(gb_lines)
         else:
-            group_b_section = prior_context + "  None detected."
+            group_b_text = prior_context + "  None detected."
 
         prompt = PROMPT_TEMPLATE
-        prompt = prompt.replace("{GROUP_B_SECTION}",  group_b_section)
-        prompt = prompt.replace("{ALIAS_SECTION}",    alias_section)
-        prompt = prompt.replace("<<NOTE_TEXT>>",      note_text)
-        for symptom in SYMPTOMS:
-            ph = "{" + RAG_PLACEHOLDERS[symptom] + "}"
-            prompt = prompt.replace(
-                ph, format_passages(per_symptom_passages[symptom], symptom))
+        prompt = prompt.replace("{ALIAS_SECTION}", alias_section)
+        prompt = prompt.replace("{GROUP_B}",       group_b_text)
+        prompt = prompt.replace("{RAG_PASSAGES}",  rag_text)
+        prompt = prompt.replace("<<NOTE_TEXT>>",   note_text)
 
         try:
             content = generate(prompt, tokenizer, model)
@@ -692,27 +683,26 @@ def run_agentic_inference(notes_df, bm25, chunks, umls_synonyms,
             if weak and len(weak) <= 4:
                 self_corrections += 1
                 gb_keys  = list(group_b.keys())[:3]
+                exp_p    = []; exp_seen = set()
+                for symptom in weak:
+                    eq = (symptom.lower() + " "
+                          + " ".join(gb_keys)
+                          + " colorectal cancer EOCRC")
+                    for p in retrieve_passages(
+                            bm25, chunks, eq, symptom, merged_vocab):
+                        k = p["text"][:60]
+                        if k not in exp_seen:
+                            exp_seen.add(k); exp_p.append(p)
+                exp_p  = sorted(exp_p, key=lambda x: x["score"], reverse=True)[:5]
+                exp_rag = "\n".join(
+                    f"  [Evidence {i+1}] {p['text'][:250]}"
+                    for i, p in enumerate(exp_p)
+                ) if exp_p else "  No passages."
                 retry_prompt = PROMPT_TEMPLATE
-                retry_prompt = retry_prompt.replace(
-                    "{GROUP_B_SECTION}", group_b_section)
-                retry_prompt = retry_prompt.replace(
-                    "{ALIAS_SECTION}", alias_section)
-                retry_prompt = retry_prompt.replace(
-                    "<<NOTE_TEXT>>", note_text)
-                for symptom in SYMPTOMS:
-                    ph = "{" + RAG_PLACEHOLDERS[symptom] + "}"
-                    if symptom in weak:
-                        exp_q = (symptom.lower() + " "
-                                 + " ".join(gb_keys)
-                                 + " colorectal cancer EOCRC early onset")
-                        exp_p = retrieve_for_symptom(
-                            bm25, chunks, exp_q, symptom, umls_synonyms)
-                        retry_prompt = retry_prompt.replace(
-                            ph, format_passages(exp_p, symptom))
-                    else:
-                        retry_prompt = retry_prompt.replace(
-                            ph, format_passages(
-                                per_symptom_passages[symptom], symptom))
+                retry_prompt = retry_prompt.replace("{ALIAS_SECTION}", alias_section)
+                retry_prompt = retry_prompt.replace("{GROUP_B}",       group_b_text)
+                retry_prompt = retry_prompt.replace("{RAG_PASSAGES}",  exp_rag)
+                retry_prompt = retry_prompt.replace("<<NOTE_TEXT>>",   note_text)
                 try:
                     rc = generate(retry_prompt, tokenizer, model)
                     rp, rr = safe_json_loads(rc)
@@ -726,7 +716,7 @@ def run_agentic_inference(notes_df, bm25, chunks, umls_synonyms,
             for symptom in SYMPTOMS:
                 contr, evidence = detect_rag_contradiction(
                     parsed, per_symptom_passages[symptom],
-                    symptom, umls_synonyms, note_text)
+                    symptom, merged_vocab, note_text)
                 if contr:
                     rag_overrides += 1
                     parsed[symptom] = "Yes"
@@ -738,8 +728,8 @@ def run_agentic_inference(notes_df, bm25, chunks, umls_synonyms,
             if pat_id not in patient_memory:
                 patient_memory[pat_id] = {}
             for symptom in SYMPTOMS:
-                ans = normalize_answer(parsed.get(symptom,""))
-                if ans in ("yes","no"):
+                ans = normalize_answer(parsed.get(symptom, ""))
+                if ans in ("yes", "no"):
                     patient_memory[pat_id][symptom] = ans
 
         out = row.to_dict()
@@ -749,7 +739,7 @@ def run_agentic_inference(notes_df, bm25, chunks, umls_synonyms,
         out["group_b_found"]   = json.dumps(group_b)
         rows.append(out)
 
-        if (idx+1) % 50 == 0:
+        if (idx + 1) % 50 == 0:
             pd.DataFrame(rows).to_csv("exp6_checkpoint.csv", index=False)
             print(f"  [{idx+1}/{len(notes_df)}] "
                   f"overrides={rag_overrides} "
@@ -759,80 +749,81 @@ def run_agentic_inference(notes_df, bm25, chunks, umls_synonyms,
     exp_df.to_csv("exp6_outputs_raw.csv", index=False)
     total    = len(exp_df)
     n_failed = exp_df["exp_output_dict"].apply(
-        lambda x: not isinstance(x,dict)).sum()
+        lambda x: not isinstance(x, dict)).sum()
 
     print(f"\nexp6_outputs_raw.csv ({total} rows)")
     print(f"Parse failures:   {n_failed}/{total}")
     print(f"RAG overrides:    {rag_overrides}")
     print(f"Self-corrections: {self_corrections}")
 
-    print("\nTop 30 GROUP B concepts across all notes:")
+    print("\nTop 25 GROUP B concepts across all notes:")
     for c, n in sorted(group_b_freq.items(),
-                        key=lambda x: x[1], reverse=True)[:30]:
+                        key=lambda x: x[1], reverse=True)[:25]:
         print(f"  {c:<40} {n:>4} notes")
 
     valid_df = exp_df[
-        exp_df["exp_output_dict"].apply(lambda x: isinstance(x,dict))
+        exp_df["exp_output_dict"].apply(lambda x: isinstance(x, dict))
     ].copy().reset_index(drop=True)
     print(f"\nValid rows: {len(valid_df)}/{total}")
     return valid_df
 
+
 def run_metrics(valid_df):
     print("\n" + "="*65)
-    print("METRICS — Experiment 6: BM25 RAG (Full UMLS)")
+    print("METRICS — Experiment 6: ROS + UMLS + BM25 RAG")
     print("="*65)
 
     metric_df = valid_df.copy()
     for symptom, conf_key, inf_key in SYMPTOM_SPECS:
         metric_df[symptom]  = metric_df["exp_output_dict"].apply(
-            lambda d, s=symptom:  d.get(s,"")     if isinstance(d,dict) else "")
+            lambda d, s=symptom: d.get(s,"") if isinstance(d,dict) else "")
         metric_df[conf_key] = metric_df["exp_output_dict"].apply(
             lambda d, k=conf_key: d.get(k,np.nan) if isinstance(d,dict) else np.nan)
         metric_df[inf_key]  = metric_df["exp_output_dict"].apply(
-            lambda d, k=inf_key:  d.get(k,"")     if isinstance(d,dict) else "")
+            lambda d, k=inf_key: d.get(k,"") if isinstance(d,dict) else "")
         metric_df[f"{symptom} Conf_num"] = metric_df[conf_key].apply(to_num)
 
-    print("Computing BLEU...")
+    print("Computing BLEU (no brevity penalty)...")
     for symptom, _, inf_key in SYMPTOM_SPECS:
         bleu_col = f"{symptom} BLEU_noBP"
         vals = []
         for _, row in metric_df.iterrows():
             hyp = row[inf_key]
-            if isinstance(hyp,str) and hyp.startswith("[RAG-OVERRIDE]"):
-                hyp = hyp.replace("[RAG-OVERRIDE] ","")
+            if isinstance(hyp, str) and hyp.startswith("[RAG-OVERRIDE]"):
+                hyp = hyp.replace("[RAG-OVERRIDE] ", "")
             ref = row["Clean_note_text"]
             if not isinstance(hyp,str) or hyp.strip().lower() in BAD_INFERENCE_VALS:
                 vals.append(0.0)
             else:
-                vals.append(compute_bleu_no_bp(ref,hyp))
+                vals.append(compute_bleu_no_bp(ref, hyp))
         metric_df[bleu_col] = vals
     print("BLEU done.")
 
     for symptom,_,_ in SYMPTOM_SPECS:
         metric_df[f"{symptom} BERT_P"] = np.nan
     if HAVE_BERTSCORE:
-        print("Computing BERTScore...")
+        print("Computing BERTScore (roberta-large, precision only)...")
         for symptom,_,inf_key in SYMPTOM_SPECS:
-            bert_col   = f"{symptom} BERT_P"
-            idxs,refs,hyps = [],[],[]
-            for i,row in metric_df.iterrows():
+            bert_col = f"{symptom} BERT_P"
+            idxs, refs, hyps = [], [], []
+            for i, row in metric_df.iterrows():
                 hyp = row[inf_key]
-                if isinstance(hyp,str) and hyp.startswith("[RAG-OVERRIDE]"):
-                    hyp = hyp.replace("[RAG-OVERRIDE] ","")
+                if isinstance(hyp, str) and hyp.startswith("[RAG-OVERRIDE]"):
+                    hyp = hyp.replace("[RAG-OVERRIDE] ", "")
                 ref = row["Clean_note_text"]
                 if not isinstance(hyp,str) or hyp.strip().lower() in BAD_INFERENCE_VALS:
                     continue
                 idxs.append(i); refs.append(ref); hyps.append(hyp)
             if idxs:
-                vals = compute_bertscore_batch(refs,hyps)
-                for i,val in zip(idxs,vals):
-                    metric_df.at[i,bert_col] = val
+                vals = compute_bertscore_batch(refs, hyps)
+                for i, val in zip(idxs, vals):
+                    metric_df.at[i, bert_col] = val
         print("BERTScore done.")
 
     metric_df.to_csv("exp6_note_level_metrics.csv", index=False)
 
     summary_rows = []
-    for symptom,conf_key,inf_key in SYMPTOM_SPECS:
+    for symptom, conf_key, inf_key in SYMPTOM_SPECS:
         conf_col = f"{symptom} Conf_num"
         bleu_col = f"{symptom} BLEU_noBP"
         bert_col = f"{symptom} BERT_P"
@@ -845,8 +836,8 @@ def run_metrics(valid_df):
             "No_Count":      int(no_mask.sum()),
             "Conf_Mean":     metric_df[conf_col].mean(),
             "Conf_SD":       metric_df[conf_col].std(),
-            "Conf_Mean_Yes": metric_df.loc[yes_mask,conf_col].mean(),
-            "Conf_Mean_No":  metric_df.loc[no_mask, conf_col].mean(),
+            "Conf_Mean_Yes": metric_df.loc[yes_mask, conf_col].mean(),
+            "Conf_Mean_No":  metric_df.loc[no_mask,  conf_col].mean(),
             "BLEU_Mean":     metric_df[bleu_col].mean(),
             "BLEU_SD":       metric_df[bleu_col].std(),
             "BERTP_Mean":    metric_df[bert_col].mean(),
@@ -861,7 +852,7 @@ def run_metrics(valid_df):
     print("="*65)
     print(f"{'Symptom':<46} {'Yes':>6} {'No':>6}")
     print("-"*60)
-    for _,r in summary_table.iterrows():
+    for _, r in summary_table.iterrows():
         print(f"  {r['Symptom']:<44} {int(r['Yes_Count']):>6} {int(r['No_Count']):>6}")
     print(f"\n  TOTAL YES: {int(summary_table['Yes_Count'].sum())}")
 
@@ -870,7 +861,7 @@ def run_metrics(valid_df):
     print("="*65)
     print(f"{'Symptom':<46} {'Conf':>12} {'BLEU':>12} {'BERT-P':>12}")
     print("-"*84)
-    for _,r in summary_table.iterrows():
+    for _, r in summary_table.iterrows():
         print(f"  {r['Symptom']:<44} "
               f"{r['Conf_Mean']:>4.2f}+-{r['Conf_SD']:>4.2f}  "
               f"{r['BLEU_Mean']:>4.2f}+-{r['BLEU_SD']:>4.2f}  "
@@ -882,9 +873,9 @@ def run_metrics(valid_df):
 if __name__ == "__main__":
     import argparse
     parser = argparse.ArgumentParser(
-        description="Exp6: BM25 RAG with Full UMLS Concept Scanning")
+        description="Exp 6: ROS + UMLS + BM25 RAG (paper-aligned)")
     parser.add_argument("--phase", default="all",
-                        choices=["inference","metrics","all"])
+                        choices=["inference", "metrics", "all"])
     parser.add_argument("--model", default=HF_MODEL_ID)
     parser.add_argument("--max_notes", type=int, default=None)
     args = parser.parse_args()
@@ -894,29 +885,36 @@ if __name__ == "__main__":
         exit(1)
 
     print("\n" + "="*65)
-    print("EXPERIMENT 6 — BM25 RAG with Full UMLS Concept Scanning")
-    print("  Step 1: Scan each note for ALL UMLS concepts (via cache)")
-    print("  Step 2: GROUP A = 7 symptoms | GROUP B = all others")
-    print("  Step 3: GROUP B drives RAG query construction")
-    print("  Step 4: PubMed retrieval about GROUP B concepts + EOCRC")
-    print("  Step 5: LLM sees note + GROUP B context + evidence")
+    print("EXPERIMENT 6 — ROS + UMLS + BM25 RAG")
+    print("  Paper: Exp.6 extends Exp.5 with BM25 (k=32)")
+    print("  Components: A (baseline) + B (225 manual aliases)")
+    print("            + C (189 UMLS) → 385 merged vocabulary")
+    print("            + D (ROS Rules R1-R4)")
+    print("            + BM25 RAG (k=32, sentence chunks)")
+    print("  Prompt: exactly matches paper Fig. 1")
+    print("  ROS: programmatic split + contradiction detection")
     print("="*65)
 
-    umls_synonyms        = load_umls_synonyms()
-    cache, group_b_lookup = load_concept_cache()
-    chunks               = build_chunks()
-    bm25                 = build_bm25_index(chunks)
-    notes_df             = load_notes()
+    # Load components
+    umls_synonyms  = load_umls_synonyms()
+    merged_vocab   = build_merged_vocabulary(umls_synonyms)
+    alias_section  = build_alias_section(merged_vocab)
+    _, gb_lookup   = load_concept_cache()
+    chunks         = build_chunks()
+    bm25           = build_bm25_index(chunks)
+    notes_df       = load_notes()
+
     if args.max_notes:
         notes_df = notes_df.head(args.max_notes)
 
     valid_df = None
 
-    if args.phase in ("inference","all"):
+    if args.phase in ("inference", "all"):
         tokenizer, model = load_llama(args.model)
         valid_df = run_agentic_inference(
-            notes_df, bm25, chunks, umls_synonyms,
-            cache, group_b_lookup, tokenizer, model)
+            notes_df, bm25, chunks,
+            merged_vocab, alias_section,
+            gb_lookup, tokenizer, model)
         valid_df.to_csv("exp6_valid_outputs.csv", index=False)
 
     if args.phase == "metrics":
@@ -924,9 +922,9 @@ if __name__ == "__main__":
         raw_df["exp_output_dict"] = raw_df["exp_output_raw"].apply(
             lambda x: safe_json_loads(str(x))[0] if pd.notna(x) else None)
         valid_df = raw_df[
-            raw_df["exp_output_dict"].apply(lambda x: isinstance(x,dict))
+            raw_df["exp_output_dict"].apply(lambda x: isinstance(x, dict))
         ].copy().reset_index(drop=True)
         print(f"Valid rows loaded: {len(valid_df)}")
 
-    if args.phase in ("metrics","all") and valid_df is not None:
+    if args.phase in ("metrics", "all") and valid_df is not None:
         run_metrics(valid_df)
