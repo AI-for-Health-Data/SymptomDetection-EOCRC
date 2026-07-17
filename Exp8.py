@@ -32,7 +32,6 @@ except ImportError:
     HAVE_CROSSENCODER = False
     print("INFO: sentence_transformers not installed — cross-encoder disabled.")
 
-
 PATH              = "rebuilt_notes_by_noteid.csv"
 HF_MODEL_ID       = "meta-llama/Meta-Llama-3.1-8B-Instruct"
 HF_CACHE_DIR      = "/lustre/smuexa01/client/users/nikkieh/hf_cache"
@@ -79,8 +78,8 @@ DENIAL_PREFIXES = [
     "absent ","none ","not ","deny ","no history of ",
 ]
 
-
 FH_EXCLUSION_KEYWORDS = [
+    # Genetic/molecular markers (population genetics papers)
     "germline",
     "penetrance",
     "msh2",
@@ -93,6 +92,7 @@ FH_EXCLUSION_KEYWORDS = [
     "amsterdam ii",
     "bethesda criteria",
     "bethesda guideline",
+    # Population epidemiology framing
     "prevalence of lynch",
     "incidence of lynch",
     "lynch syndrome risk",
@@ -102,6 +102,7 @@ FH_EXCLUSION_KEYWORDS = [
     "hnpcc diagnosis",
     "familial adenomatous polyposis gene",
     "apc gene mutation",
+    # Universal screening programs (population, not clinical)
     "universal tumor testing",
     "universal screening",
     "reflex testing",
@@ -111,6 +112,10 @@ FH_EXCLUSION_KEYWORDS = [
 FH_SYM = "Family history of colorectal cancer"
 
 def build_fh_filtered_corpus(chunks):
+    """
+    FIX A: Called ONCE at startup. Returns (filtered_chunks, filtered_bm25).
+    Filters using single keywords that match sentence-level PubMed text.
+    """
     kept = []
     excluded_count = 0
     for chunk in chunks:
@@ -135,7 +140,6 @@ def build_fh_filtered_corpus(chunks):
     fh_bm25 = BM25Okapi([c.lower().split() for c in kept])
     print(f"  FH BM25 index:  ready")
     return kept, fh_bm25
-
 
 MANUAL_ALIASES = {
     "Abdominal pain": [
@@ -220,6 +224,7 @@ MANUAL_ALIASES = {
         "fh bowel cancer",
     ],
 }
+
 
 def load_umls_synonyms():
     with open(UMLS_JSON) as f:
@@ -331,6 +336,7 @@ def build_bm25_index(chunks):
     print(f"BM25 index: {len(chunks)} chunks")
     return bm25
 
+
 class CrossEncoderReranker:
     def __init__(self):
         if not HAVE_CROSSENCODER:
@@ -374,6 +380,7 @@ def scan_note_for_umls_concepts(note_text, merged_vocab, group_b_lookup):
         if term in note_lower and concept_name not in group_b:
             group_b[concept_name] = term
     return group_a, group_b
+
 
 def build_initial_query(note_text, symptom, merged_vocab, group_b):
     note_lower = note_text.lower()
@@ -421,13 +428,19 @@ def build_refined_query(symptom, critique_label, merged_vocab, group_b,
         parts += ["individual patient clinical note symptom documented"]
     return " ".join(parts[:15])
 
+
 def retrieve_hybrid(encoder, chunk_vecs, chunks, bm25,
                     fh_chunks, fh_bm25,
                     queries, merged_vocab, reranker=None,
                     dense_k=DENSE_TOP_K, bm25_k=BM25_TOP_K,
                     candidate_k=RRF_CANDIDATE_K, keep_k=KEEP_K,
                     alpha=HYBRID_ALPHA):
-
+    """
+    Hybrid retrieval with:
+    - Pre-built filtered corpus for FH (FIX A — no rebuild per note)
+    - Cross-encoder reranking of top candidates (when available)
+    - Global RRF across all 7 symptom queries for evidence block
+    """
     query_texts  = list(queries.values())
     query_vecs   = encoder.encode_queries(query_texts)
     dense_scores = chunk_vecs @ query_vecs.T          # (N_full, 7)
@@ -438,6 +451,7 @@ def retrieve_hybrid(encoder, chunk_vecs, chunks, bm25,
     for i, (symptom, query) in enumerate(queries.items()):
         sym_terms = merged_vocab.get(symptom, [])[:40]
 
+        # FH uses pre-built filtered BM25 
         if symptom == FH_SYM and fh_bm25 is not None:
             b_scores = fh_bm25.get_scores(query.lower().split())
             b_ranked = np.argsort(b_scores)[::-1][:bm25_k]
@@ -457,8 +471,11 @@ def retrieve_hybrid(encoder, chunk_vecs, chunks, bm25,
                 per_symptom[symptom] = reranker.rerank(query, to_rank, keep_k)
             else:
                 per_symptom[symptom] = to_rank[:keep_k]
+            # FH passages do NOT contribute to global RRF
+            # (prevents contaminated passages reaching other symptoms' evidence)
             continue
 
+        # Standard path for all other symptoms 
         d_scores = dense_scores[:, i]
         d_ranked = np.argsort(d_scores)[::-1][:dense_k]
 
@@ -513,6 +530,7 @@ def format_passages(passages):
         f"  [Evidence {i+1}] {p['text'][:250]}"
         for i, p in enumerate(passages))
 
+
 def split_note_ros(note_text):
     note_lower  = note_text.lower()
     ros_headers = ["review of systems","ros:","ros ","r.o.s.",
@@ -548,7 +566,6 @@ def symptom_present_outside_ros(note_text, symptom, merged_vocab):
                 return True
             idx += 1
     return False
-
 
 _token_pat = re.compile(r"\w+|\S")
 
@@ -616,7 +633,6 @@ def symptoms_needing_retry(critique_results, parsed,
         and str(parsed.get(sym, "")).strip().lower() == "yes"
     ]
     return to_retry[:max_retry]
-
 
 INITIAL_PROMPT = """You are an experienced gastroenterology clinician.
 Analyze the patient's clinical note and extract information
@@ -721,6 +737,7 @@ def build_json_keys_for_symptoms(symptoms):
                  f'"Duration of {sym.lower()} inference"']
     return ", ".join(keys)
 
+
 def strip_code_fences(s):
     s = s.strip()
     if s.startswith("```"):
@@ -815,6 +832,7 @@ def to_num(x):
     m = re.search(r"-?\d+(?:\.\d+)?", str(x))
     return float(m.group()) if m else np.nan
 
+
 def load_llama(model_id=HF_MODEL_ID):
     import torch as _torch
     from transformers import AutoTokenizer, AutoModelForCausalLM
@@ -856,7 +874,6 @@ def maybe_truncate(text, max_chars=NOTE_CHAR_LIMIT):
     if len(t) <= max_chars: return t
     return t[:max_chars//2] + "\n...\n" + t[-(max_chars//2):]
 
-
 def detect_contradiction(parsed, passages, symptom, merged_vocab, note_text):
     if str(parsed.get(symptom, "")).strip().lower() != "no":
         return False, None
@@ -870,6 +887,7 @@ def detect_contradiction(parsed, passages, symptom, merged_vocab, note_text):
         if p.get("dense", 0) >= RAG_SCORE_MIN:
             return True, p["text"][:200]
     return False, None
+
 
 def run_inference(notes_df, encoder, chunk_vecs, chunks, bm25,
                   fh_chunks, fh_bm25, reranker,
@@ -916,6 +934,7 @@ def run_inference(notes_df, encoder, chunk_vecs, chunks, bm25,
                 for n, f in list(group_b.items())[:15])
             if group_b else prior_context + "  None detected.")
 
+        # Round 0: initial retrieval
         init_queries = {
             sym: build_initial_query(note_text, sym, merged_vocab, group_b)
             for sym in SYMPTOMS
@@ -1113,7 +1132,6 @@ def run_inference(notes_df, encoder, chunk_vecs, chunks, bm25,
     ].copy().reset_index(drop=True)
     return valid_df
 
-
 def run_metrics(valid_df):
     print("\n" + "="*70)
     print("METRICS — Experiment 8 v2: Self-RAG + Filter + Reranker")
@@ -1251,6 +1269,7 @@ def run_metrics(valid_df):
 
     return summary_df
 
+
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(
         description="Exp8 v2 (FIXED): Self-RAG + Corpus Filter + Reranker")
@@ -1277,6 +1296,7 @@ if __name__ == "__main__":
     chunks                = load_chunks()
     notes_df              = load_notes()
 
+    # FIX A: build filtered corpus ONCE
     fh_chunks, fh_bm25 = build_fh_filtered_corpus(chunks)
 
     if args.max_notes:
