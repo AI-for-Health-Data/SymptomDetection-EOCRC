@@ -28,7 +28,6 @@ HF_MODEL_ID    = "meta-llama/Meta-Llama-3.1-8B-Instruct"
 HF_CACHE_DIR   = "/lustre/smuexa01/client/users/nikkieh/hf_cache"
 TEMPERATURE    = 0
 MAX_NOTE_CHARS = None
-MAX_PER_SYMPTOM = 40
 
 SYMPTOMS = [
     "Abdominal pain",
@@ -45,122 +44,31 @@ SYMPTOM_SPECS = [(s, f"{s} confidence", f"{s} inference") for s in SYMPTOMS]
 BAD_INFERENCE_VALS = {
     "", "n/a", "na", "not mentioned", "none", "no inference",
     "not reported", "not applicable", "not stated",
+    "not mentioned outside ros",
 }
-
-MANUAL_ALIASES = {
-    "Abdominal pain": [
-        "abdominal pain", "abd pain", "abd pn", "abdo pain", "stomach pain",
-        "stomach ache", "stomachache", "tummy pain", "tummy ache", "belly pain",
-        "bellyache", "gut pain", "abdominal discomfort", "abdominal soreness",
-        "abdominal tenderness", "tender abdomen", "tenderness in abdomen",
-        "epigastric pain", "epigastric discomfort", "epigastric tenderness",
-        "ruq pain", "right upper quadrant pain", "luq pain", "left upper quadrant pain",
-        "rlq pain", "right lower quadrant pain", "llq pain", "left lower quadrant pain",
-        "periumbilical pain", "peri-umbilical pain", "umbilical pain",
-        "suprapubic pain", "pelvic pain", "lower abdominal pain", "upper abdominal pain",
-        "cramping", "abdominal cramping", "colicky pain", "colicky abdominal pain",
-        "sharp abdominal pain", "dull abdominal pain", "burning abdominal pain",
-        "gnawing pain", "pressure in abdomen", "fullness", "abdominal pressure",
-        "bloating", "abdominal bloating", "distension", "abdominal distension",
-        "gas pain", "gassy", "flatulence with pain",
-        "dyspepsia", "indigestion", "heartburn", "acid reflux", "gerd symptoms",
-        "gastritis", "peptic ulcer", "ulcer pain",
-        "c/o abdominal pain", "complains of abdominal pain", "reports abdominal pain",
-        "pain in abdomen",
-    ],
-    "Rectal bleeding": [
-        "rectal bleeding", "bleeding per rectum", "blood per rectum",
-        "blood from rectum", "rectal hemorrhage", "rectal haemorrhage", "rectorrhagia",
-        "blood in stool", "bloody stool", "blood on stool", "stool with blood",
-        "streaks of blood", "blood streaked stool", "blood on toilet paper",
-        "blood when wiping", "hematochezia", "haematochezia", "brbpr",
-        "bright red blood per rectum", "maroon stools", "melena", "black tarry stools",
-        "positive fobt", "positive fit", "occult blood", "heme positive stool",
-        "hemorrhoids with bleeding", "haemorrhoids with bleeding",
-        "anal fissure bleeding", "fissure with bleeding",
-    ],
-    "Rectal pain": [
-        "rectal pain", "pain in rectum", "painful rectum",
-        "anal pain", "pain in anus", "anorectal pain",
-        "proctalgia", "proctalgia fugax", "rectal discomfort",
-        "anal discomfort", "rectal soreness", "anal soreness",
-        "pain with bowel movement", "painful bowel movement", "painful defecation",
-        "dyschezia", "odynochezia", "pain during defecation", "pain after bowel movement",
-        "tenesmus", "rectal pressure", "feels pressure in rectum",
-        "anal fissure pain", "fissure pain", "hemorrhoid pain",
-        "thrombosed hemorrhoid", "perianal pain", "perirectal pain",
-    ],
-    "Diarrhea": [
-        "diarrhea", "diarrhoea", "d+", "loose stools", "loose stool",
-        "watery stools", "watery stool", "liquid stool", "runny stool",
-        "the runs", "frequent stools", "frequent bowel movements",
-        "increased bowel movements", "increased stool frequency",
-        "multiple loose bms", "loose bm", "watery bm", "urgent bowel movements",
-        "fecal urgency", "bowel urgency", "explosive diarrhea",
-        "bristol 6", "bristol 7", "soft stools", "mushy stools",
-        "gastroenteritis", "enteritis", "colitis with diarrhea",
-        "travelers diarrhea", "c diff", "c. diff", "clostridioides difficile",
-    ],
-    "Constipation": [
-        "constipation", "constipated", "hard stools", "hard stool",
-        "infrequent stools", "infrequent bowel movements",
-        "decreased stool frequency", "decreased bowel movements",
-        "no bm", "no bowel movement", "no stool for",
-        "difficulty passing stool", "difficulty stooling",
-        "straining", "strains with bm", "incomplete evacuation",
-        "obstipation", "fecal impaction", "stool impaction",
-        "retained stool", "stool burden", "slow transit constipation",
-        "bristol 1", "bristol 2", "pellet stools", "scybalous stools",
-    ],
-    "Weight loss": [
-        "weight loss", "wt loss", "lost weight", "losing weight",
-        "weight down", "weight decreased", "decreased weight",
-        "unintentional weight loss", "unexplained weight loss",
-        "involuntary weight loss", "clothes fitting looser",
-        "poor weight gain", "failure to thrive",
-        "cachexia", "wasting", "cachectic", "malnutrition",
-        "anorexia", "loss of appetite", "decreased appetite",
-    ],
-    "Family history of colorectal cancer": [
-        "family history of colorectal cancer", "family history colorectal cancer",
-        "family history of colon cancer", "family history colon cancer",
-        "fh colon cancer", "fhx colon cancer", "fhx crc", "fh crc",
-        "crc in family", "colon ca in family", "colon cancer runs in family",
-        "mother had colon cancer", "father had colon cancer",
-        "sister had colon cancer", "brother had colon cancer",
-        "first degree relative with colon cancer", "fdr with colon cancer",
-        "lynch syndrome", "hnpcc", "familial adenomatous polyposis", "fap",
-        "hereditary colorectal cancer",
-        "family history of bowel cancer", "fh bowel cancer",
-    ],
-}
-
-
-def build_alias_section():
-    lines = []
-    for symptom in SYMPTOMS:
-        aliases = MANUAL_ALIASES.get(symptom, [])
-        seen, deduped = set(), []
-        for a in aliases:
-            if a.lower() not in seen:
-                seen.add(a.lower())
-                deduped.append(a)
-        deduped = deduped[:MAX_PER_SYMPTOM]
-        lines.append(f"{symptom}: {', '.join(deduped)}")
-    return "\n".join(lines)
 
 PROMPT_TEMPLATE = """
 You are an experienced gastroenterology clinician.
 You will analyze a patient's ORIGINAL clinical note text and extract information
 ONLY from the note text (no assumptions, no external knowledge).
 
-SYNONYM GUIDANCE — treat the following terms as matches for each symptom:
-{ALIAS_SECTION}
+REVIEW OF SYSTEMS (ROS) RULE:
+- The ROS section often contains templated negatives (e.g., "no abdominal pain",
+  "negative for diarrhea") that can conflict with the rest of the note.
+- Do NOT use ROS-negative statements as evidence to answer "No".
+- If ROS says "no X" but other parts (Chief Complaint, HPI, Assessment/Plan,
+  Diagnosis) indicate X, then answer "Yes" using NON-ROS evidence for inference.
+- If the symptom is not mentioned outside ROS at all, answer "No" with
+  low confidence (2), and inference can be "Not mentioned outside ROS".
+- If the note (outside ROS) explicitly denies a symptom
+  (e.g., in HPI: "patient denies rectal bleeding"), then answer "No"
+  with high confidence and use that NON-ROS denial as inference.
 
 For each item, provide:
 - Answer (Yes/No)
 - Confidence: integer 1-5 (1=Very Low, 2=Low, 3=Moderate, 4=High, 5=Very High)
 - Inference: a short quote or phrase copied from the note text supporting the answer
+  (must NOT come from ROS-negative text)
 
 Return a SINGLE valid JSON object with these keys exactly:
 "Abdominal pain", "Abdominal pain confidence", "Abdominal pain inference",
@@ -179,17 +87,16 @@ Return a SINGLE valid JSON object with these keys exactly:
 "Other comments", "Other comments confidence", "Other comments inference"
 
 Rules:
-- If a symptom is clearly present, answer "Yes" (confidence 4-5).
-- If clearly denied, answer "No" (confidence 4-5).
-- If not mentioned at all, answer "No" with lower confidence (2).
+- If clearly present outside ROS -> "Yes" (confidence 4-5).
+- If explicitly denied outside ROS -> "No" (confidence 4-5).
+- If only appears as ROS-negative and nowhere else -> "No" (confidence 2).
 - Use "N/A" for duration if not applicable or not reported.
-- Inference MUST be copied from the NOTE TEXT.
+- Inference MUST be copied from the NOTE TEXT (must NOT come from ROS-negative text).
 - Output ONLY JSON — no prose, no markdown fences, no extra text.
 
 Patient NOTE TEXT:
 <<NOTE_TEXT>>
 """.strip()
-
 
 def load_notes():
     notes_df = pd.read_csv(PATH)
@@ -210,7 +117,6 @@ def load_notes():
     print(f"Notes loaded: {len(notes_df)}")
     return notes_df
 
-
 def maybe_truncate(text, max_chars=None):
     if text is None:
         return ""
@@ -219,7 +125,6 @@ def maybe_truncate(text, max_chars=None):
         return t
     return t[:max_chars // 2] + "\n...\n" + t[-(max_chars // 2):]
 
-
 def strip_code_fences(s):
     s = s.strip()
     if s.startswith("```"):
@@ -227,7 +132,6 @@ def strip_code_fences(s):
         if s.endswith("```"):
             s = s[:-3].strip()
     return s
-
 
 def extract_first_json_object(s):
     s = strip_code_fences(s)
@@ -365,24 +269,20 @@ def generate(prompt, tokenizer, model, max_new_tokens=1024):
 
 def run_inference(notes_df, model_id=HF_MODEL_ID):
     print("\n" + "="*65)
-    print("INFERENCE — Experiment: Aliases Only (no ROS rules)")
-    print("  Manual aliases: ON")
-    print("  ROS rules:      OFF")
+    print("INFERENCE — Experiment: ROS Rules Only")
+    print("  ROS rules:      ON")
+    print("  Manual aliases: OFF  <- key difference from Exp 4")
     print("  UMLS synonyms:  OFF")
     print("="*65)
-
-    alias_section = build_alias_section()
-    prompt_filled = PROMPT_TEMPLATE.replace("{ALIAS_SECTION}", alias_section)
-    print(f"Prompt length (without note): {len(prompt_filled):,} chars")
-    print(f"Manual aliases: {sum(len(v) for v in MANUAL_ALIASES.values())} terms")
+    print(f"Prompt length (without note): {len(PROMPT_TEMPLATE):,} chars")
 
     tokenizer, model = load_llama(model_id)
     rows = []
 
     for idx, row in tqdm(notes_df.iterrows(), total=len(notes_df),
-                         desc="Aliases only inference"):
+                         desc="ROS only inference"):
         note_text = maybe_truncate(row["Clean_note_text"], MAX_NOTE_CHARS)
-        prompt    = prompt_filled.replace("<<NOTE_TEXT>>", note_text)
+        prompt    = PROMPT_TEMPLATE.replace("<<NOTE_TEXT>>", note_text)
         try:
             content = generate(prompt, tokenizer, model)
         except Exception as e:
@@ -397,15 +297,15 @@ def run_inference(notes_df, model_id=HF_MODEL_ID):
 
         if (idx + 1) % 50 == 0:
             pd.DataFrame(rows).to_csv(
-                "exp_aliases_only_checkpoint.csv", index=False)
+                "exp_ros_only_checkpoint.csv", index=False)
             print(f"  Checkpoint: {idx+1}/{len(notes_df)}")
 
     exp_df = pd.DataFrame(rows)
-    exp_df.to_csv("exp_aliases_only_outputs_raw.csv", index=False)
+    exp_df.to_csv("exp_ros_only_outputs_raw.csv", index=False)
     total    = len(exp_df)
     n_failed = exp_df["exp_output_dict"].apply(
         lambda x: not isinstance(x, dict)).sum()
-    print(f"\nexp_aliases_only_outputs_raw.csv  ({total} rows)")
+    print(f"\nexp_ros_only_outputs_raw.csv  ({total} rows)")
     print(f"Parse failures: {n_failed}/{total}  ({100*n_failed/total:.1f}%)")
 
     valid_df = exp_df[
@@ -414,9 +314,10 @@ def run_inference(notes_df, model_id=HF_MODEL_ID):
     print(f"Valid rows: {len(valid_df)}/{total}")
     return valid_df
 
+
 def run_metrics(valid_df):
     print("\n" + "="*65)
-    print("METRICS — Aliases Only")
+    print("METRICS — ROS Only")
     print("="*65)
 
     # Yes counts
@@ -427,9 +328,8 @@ def run_metrics(valid_df):
         ).sum()
         count_rows.append({"Symptom": symptom, "Yes_Count": int(yes_count)})
     count_df = pd.DataFrame(count_rows)
-    count_df.to_csv("exp_aliases_only_yes_counts.csv", index=False)
+    count_df.to_csv("exp_ros_only_yes_counts.csv", index=False)
 
-    # Unpack JSON
     metric_df = valid_df.copy()
     for symptom, conf_key, inf_key in SYMPTOM_SPECS:
         metric_df[symptom]  = metric_df["exp_output_dict"].apply(
@@ -476,7 +376,7 @@ def run_metrics(valid_df):
                     metric_df.at[i, bert_col] = val
         print("BERTScore done.")
 
-    metric_df.to_csv("exp_aliases_only_note_level_metrics.csv", index=False)
+    metric_df.to_csv("exp_ros_only_note_level_metrics.csv", index=False)
 
     # Summary
     summary_rows = []
@@ -506,12 +406,11 @@ def run_metrics(valid_df):
         })
 
     summary_table = pd.DataFrame(summary_rows)
-    summary_table.to_csv("exp_aliases_only_summary_table.csv", index=False)
+    summary_table.to_csv("exp_ros_only_summary_table.csv", index=False)
 
-    # TABLE I
     print("\n" + "="*65)
-    print("TABLE I — POSITIVE DETECTION COUNTS (Aliases Only)")
-    print("Manual aliases: ON | ROS rules: OFF | UMLS: OFF")
+    print("TABLE I — POSITIVE DETECTION COUNTS (ROS Only)")
+    print("ROS rules: ON | Manual aliases: OFF | UMLS: OFF")
     print("="*65)
     print(f"{'Symptom':<46} {'Yes':>6} {'No':>6}")
     print("-"*60)
@@ -519,9 +418,8 @@ def run_metrics(valid_df):
         print(f"  {r['Symptom']:<44} {int(r['Yes_Count']):>6} {int(r['No_Count']):>6}")
     print(f"\n  TOTAL YES: {int(summary_table['Yes_Count'].sum())}")
 
-    # TABLE II
     print("\n" + "="*65)
-    print("TABLE II — CONFIDENCE, BLEU, BERTSCORE (Aliases Only)")
+    print("TABLE II — CONFIDENCE, BLEU, BERTSCORE (ROS Only)")
     print("Mean +- SD across ALL predictions")
     print("="*65)
     print(f"{'Symptom':<46} {'Conf':>12} {'BLEU':>12} {'BERT-P':>12}")
@@ -541,14 +439,15 @@ def run_metrics(valid_df):
               f"{r['BLEU_Mean_Yes']:>6.3f} {r['BLEU_Mean_No']:>6.3f} "
               f"{r['BERTP_Mean_Yes']:>7.3f} {r['BERTP_Mean_No']:>7.3f}")
     print("  CY=Conf Yes  CN=Conf No  BY=BLEU Yes  BN=BLEU No")
-    print("\n  NOTE: CN should remain HIGH (~4) vs Experiment with ROS rules (~2.3)")
-    print("  This confirms ROS rules are the key driver of confidence calibration")
+    print("\n  NOTE: YES count should be LOWER than Exp 4 (ROS+Aliases)")
+    print("  because informal terms (brbpr, wt loss etc) are not recognised")
+    print("  CN should drop to ~2.3 — same as Exp 4 — because ROS rules are ON")
 
     print("\nFiles saved:")
-    print("  exp_aliases_only_outputs_raw.csv")
-    print("  exp_aliases_only_yes_counts.csv")
-    print("  exp_aliases_only_note_level_metrics.csv")
-    print("  exp_aliases_only_summary_table.csv")
+    print("  exp_ros_only_outputs_raw.csv")
+    print("  exp_ros_only_yes_counts.csv")
+    print("  exp_ros_only_note_level_metrics.csv")
+    print("  exp_ros_only_summary_table.csv")
 
     return summary_table
 
@@ -556,7 +455,7 @@ def run_metrics(valid_df):
 if __name__ == "__main__":
     import argparse
     parser = argparse.ArgumentParser(
-        description="Aliases Only — Manual synonyms in prompt, no ROS rules"
+        description="ROS Only — ROS rules in prompt, no aliases, no UMLS"
     )
     parser.add_argument("--phase", default="all",
                         choices=["inference", "metrics", "all"])
@@ -568,20 +467,24 @@ if __name__ == "__main__":
     if args.max_notes:
         notes_df = notes_df.head(args.max_notes)
 
-    print(f"\nExperiment: Aliases Only")
-    print(f"  Manual aliases: ON  ({sum(len(v) for v in MANUAL_ALIASES.values())} terms)")
-    print(f"  ROS rules:      OFF ← key difference from Exp 4 (ROS+Manual)")
+    print(f"\nExperiment: ROS Only")
+    print(f"  ROS rules:      ON  <- LLaMA ignores ROS negatives")
+    print(f"  Manual aliases: OFF <- key difference from Exp 4 (ROS+Manual)")
     print(f"  UMLS synonyms:  OFF")
     print(f"  Notes:          {len(notes_df)}")
+    print(f"\n  Expected findings:")
+    print(f"  - CN drops to ~2.3 (ROS rules calibrate uncertainty)")
+    print(f"  - YES counts LOWER than Exp 4 (no informal term recognition)")
+    print(f"  - Proves: aliases drive recall, ROS rules drive calibration")
 
     valid_df = None
 
     if args.phase in ("inference", "all"):
         valid_df = run_inference(notes_df, model_id=args.model)
-        valid_df.to_csv("exp_aliases_only_valid_outputs.csv", index=False)
+        valid_df.to_csv("exp_ros_only_valid_outputs.csv", index=False)
 
     if args.phase == "metrics":
-        raw_df = pd.read_csv("exp_aliases_only_outputs_raw.csv")
+        raw_df = pd.read_csv("exp_ros_only_outputs_raw.csv")
         raw_df["exp_output_dict"] = raw_df["exp_output_raw"].apply(
             lambda x: safe_json_loads(str(x))[0] if pd.notna(x) else None)
         valid_df = raw_df[
