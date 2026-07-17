@@ -47,7 +47,6 @@ BAD_INFERENCE_VALS = {
     "not reported", "not applicable", "not stated",
 }
 
-
 MANUAL_ALIASES = {
     "Abdominal pain": [
         "abdominal pain", "abd pain", "abd pn", "abdo pain", "stomach pain",
@@ -136,6 +135,7 @@ MANUAL_ALIASES = {
     ],
 }
 
+
 def build_alias_section():
     lines = []
     for symptom in SYMPTOMS:
@@ -189,6 +189,7 @@ Rules:
 Patient NOTE TEXT:
 <<NOTE_TEXT>>
 """.strip()
+
 
 def load_notes():
     notes_df = pd.read_csv(PATH)
@@ -281,7 +282,9 @@ def to_num(x):
     m = re.search(r"-?\d+(?:\.\d+)?", str(x))
     return float(m.group()) if m else np.nan
 
+
 _token_pat = re.compile(r"\w+|\S")
+
 
 def simple_tokenize(text):
     if not isinstance(text, str):
@@ -367,6 +370,7 @@ def run_inference(notes_df, model_id=HF_MODEL_ID):
     print("  ROS rules:      OFF")
     print("  UMLS synonyms:  OFF")
     print("="*65)
+
     alias_section = build_alias_section()
     prompt_filled = PROMPT_TEMPLATE.replace("{ALIAS_SECTION}", alias_section)
     print(f"Prompt length (without note): {len(prompt_filled):,} chars")
@@ -425,6 +429,7 @@ def run_metrics(valid_df):
     count_df = pd.DataFrame(count_rows)
     count_df.to_csv("exp_aliases_only_yes_counts.csv", index=False)
 
+    # Unpack JSON
     metric_df = valid_df.copy()
     for symptom, conf_key, inf_key in SYMPTOM_SPECS:
         metric_df[symptom]  = metric_df["exp_output_dict"].apply(
@@ -503,6 +508,7 @@ def run_metrics(valid_df):
     summary_table = pd.DataFrame(summary_rows)
     summary_table.to_csv("exp_aliases_only_summary_table.csv", index=False)
 
+    # TABLE I
     print("\n" + "="*65)
     print("TABLE I — POSITIVE DETECTION COUNTS (Aliases Only)")
     print("Manual aliases: ON | ROS rules: OFF | UMLS: OFF")
@@ -513,6 +519,7 @@ def run_metrics(valid_df):
         print(f"  {r['Symptom']:<44} {int(r['Yes_Count']):>6} {int(r['No_Count']):>6}")
     print(f"\n  TOTAL YES: {int(summary_table['Yes_Count'].sum())}")
 
+    # TABLE II
     print("\n" + "="*65)
     print("TABLE II — CONFIDENCE, BLEU, BERTSCORE (Aliases Only)")
     print("Mean +- SD across ALL predictions")
