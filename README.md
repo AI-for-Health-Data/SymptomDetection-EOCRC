@@ -22,7 +22,7 @@ VERGE separates initial extraction from claim standardization, evidence verifica
 <p align="center">
   <img src="figures/verge_workflow.png"
        alt="VERGE four-agent workflow"
-       width="110%">
+       width="130%">
 </p>
 
 **VERGE workflow.** The Extractor produces evidence-linked predictions for all seven symptoms, the Claim Composer converts them into standardized claim records, and the Verifier evaluates each claim against the clinical note. Claims requiring correction are sent to the Refiner. Label-changing refinements return to the Verifier for re-verification. The loop is bounded at five refinement rounds, after which unresolved claims are flagged for human review.
