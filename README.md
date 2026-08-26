@@ -19,11 +19,12 @@ VERGE separates initial extraction from claim standardization, evidence verifica
 
 ## Architecture
 
-<p align="center">
-  <img src="figures/verge_workflow.pdf"
-       alt="VERGE four-agent workflow"
-       width="100%">
-</p>
+[**View the VERGE four-agent workflow (PDF)**](figures/verge_workflow.pdf)
+
+**Figure 1.** VERGE four-agent architecture. The Extractor generates
+evidence-linked predictions, the Claim Composer standardizes claims, and the
+bounded Verifier–Refiner loop verifies and revises them. Unresolved claims are
+flagged for human review.
 
 **VERGE workflow.** The Extractor produces evidence-linked predictions for all seven symptoms, the Claim Composer converts them into standardized claim records, and the Verifier evaluates each claim against the clinical note. Claims requiring correction are sent to the Refiner. Label-changing refinements return to the Verifier for re-verification. The loop is bounded at five refinement rounds, after which unresolved claims are flagged for human review.
 
