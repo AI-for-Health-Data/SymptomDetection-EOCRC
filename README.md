@@ -20,7 +20,7 @@ VERGE separates initial extraction from claim standardization, evidence verifica
 ## Architecture
 
 <p align="center">
-  <img src="figures/verge_workflow.png"
+  <img src="figures/workflow.png"
        alt="VERGE four-agent workflow"
        width="100%">
 </p>
