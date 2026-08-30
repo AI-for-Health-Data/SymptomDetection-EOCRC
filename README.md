@@ -1,5 +1,5 @@
 
-**Verification-Enhanced Refinement for Grounded Extraction of EOCRC Symptoms via Constrained Agentic Verification**
+# VERGE: Verification-Enhanced Refinement for Grounded Extraction of Early-Onset Colorectal Cancer Symptoms in Clinical Notes
 
 VERGE is a four-agent clinical NLP framework for extracting evidence-grounded early-onset colorectal cancer (EOCRC) symptoms from unstructured clinical notes.
 
@@ -51,11 +51,11 @@ Before generation, symptom-specific biomedical context is constructed using:
 - evidence-quality/source-design prioritization;
 - at most two retrieved passages per symptom in the final prompt.
 
-The evidence-quality layer used in the reported run is a **GRADE-informed source-design screening heuristic** for ranking external biomedical context. These retrieval tiers are not formal body-of-evidence GRADE certainty ratings.
+The evidence-quality layer uses GRADE-informed evidence prioritization. When a valid provenance mapping is available, a retrieved passage inherits the GRADE certainty rating of the corresponding evidence body. Eligible mapped passages are prioritized by certainty, with RRF score used to break ties.
 
 Retrieved literature is used only as terminology and background context. It cannot establish, negate, or override a patient-specific label. Patient-specific positive evidence must be supported by the clinical note.
 
-For each symptom, the Extractor returns a structured prediction containing the binary label, confidence, evidence, note section, experiencer, and assertion status. Duration is additionally represented for the six patient symptoms, and family history requires both an appropriate biological relation and colorectal-cancer specificity.
+For each symptom, the Extractor returns a structured prediction containing the binary label, confidence, evidence, note section, experiencer, and assertion status.
 
 ---
 
@@ -164,8 +164,6 @@ The exact historical execution controller is preserved at:
 
 [`reproducibility/executed_pipeline/run_verge_continuation_FINAL.py`](reproducibility/executed_pipeline/run_verge_continuation_FINAL.py)
 
-The historical controller also executed a developmental Agent-5 audit after the bounded loop. **Agent 5 does not define the primary VERGE prediction.** The primary paper output is the bounded-loop `final_loop_prediction`.
-
 ---
 
 ## Main Code Map
@@ -190,7 +188,7 @@ The repository includes the comparison systems reported in the paper.
 | --- | --- |
 | Note-Only | [`baselines/note_only.py`](baselines/note_only.py) |
 | Review-of-Systems Rules | [`baselines/ros_rules.py`](baselines/ros_rules.py) |
-| ROS + Manual + UMLS | [`baselines/ros_manual_umls.py`](baselines/ros_manual_umls.py) |
+| ROS + UMLS | [`baselines/ros_manual_umls.py`](baselines/ros_manual_umls.py) |
 | MedCPT + RRF RAG | [`baselines/medcpt_rag.py`](baselines/medcpt_rag.py) |
 | medspaCy + ConText | [`baselines/run_medspacy_context_baseline.py`](baselines/run_medspacy_context_baseline.py) |
 
@@ -231,7 +229,7 @@ These experiments are included to document the developmental comparison; the fin
 
 **Code:** [`sensitivity/run_verge_bound7_extension.py`](sensitivity/run_verge_bound7_extension.py)
 
-This analysis evaluates the stability of the bounded workflow under alternative refinement limits, including the 3-, 5-, and 7-round comparison reported in the paper.
+This developmental sensitivity analysis evaluates the stability of the bounded workflow under alternative refinement limits, including 3-, 5-, and 7-round configurations. The primary VERGE workflow reported in the paper uses a five-round bound.
 
 The five-round bound is used as the primary engineering safeguard.
 
@@ -342,7 +340,3 @@ If you use VERGE, please cite:
 Full citation information will be added after publication.
 
 ---
-
-## License
-
-See [`LICENSE`](LICENSE).
