@@ -35,7 +35,7 @@ The primary VERGE prediction reported in the paper is the output of this bounded
 
 ### 1. Extractor
 
-**Code:** [`verge/agent1_extractor.py`](verge/agent1_extractor.py)
+**Code:** [`verge/extractor.py`](verge/extractor.py)
 
 The Extractor jointly evaluates all seven target symptoms in one language-model generation.
 
