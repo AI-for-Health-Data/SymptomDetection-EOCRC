@@ -176,7 +176,7 @@ The exact historical execution controller is preserved at:
 | Agent 4 — Refiner | [`verge/refiner.py`](verge/refiner.py) |
 | Shared evidence policy | [`verge/clinical_evidence_policy.py`](verge/clinical_evidence_policy.py) |
 | Shared utilities | [`verge/utilities.py`](verge/utilities.py) |
-| Executed bounded-loop controller | [`reproducibility/executed_pipeline/run_verge_continuation_FINAL.py`](reproducibility/executed_pipeline/run_verge_continuation_FINAL.py) |
+| Executed bounded-loop controller | [`verge/bounded_loop_controller.py`](verge/bounded_loop_controller.py) |
 
 ---
 
