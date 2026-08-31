@@ -144,7 +144,7 @@ Verifier
           ↓
        Refiner
           │
-          ├── label stable ─────→ VERGE label
+          ├── label unchanged ──→ VERGE label
           │
           └── label changed
                   ↓
@@ -162,7 +162,7 @@ The controller:
 
 The exact historical execution controller is preserved at:
 
-[`reproducibility/executed_pipeline/run_verge_continuation_FINAL.py`](reproducibility/executed_pipeline/run_verge_continuation_FINAL.py)
+[`verge/bounded_loop_controller.py`](verge/bounded_loop_controller.py)
 
 ---
 
