@@ -1,59 +1,4 @@
-#!/usr/bin/env python3
-"""
-run_verge_continuation.py
-=========================
-
-Correct continuation controller for the frozen VERGE workflow.
-
-This controller DOES NOT rerun Agent 2 or rerun initial Agent 3 wholesale.
-It starts from the frozen Agent 2 claims and frozen initial Agent 3 results.
-For a frozen negative claim only, a deterministic whole-note direct-candidate
-scan may trigger a selective updated Agent 3 recheck before continuation.
-
-Pipeline per claim
-------------------
-Frozen Agent 2 claim
-    +
-Frozen initial Agent 3 verification
-    |
-    |-- VERIFIED -----------------------------------------> Agent 5
-    |
-    `-- REFINE -> Agent 4
-                    |
-                    |-- label unchanged:
-                    |      promote the corrected Agent 4 claim to final_claim
-                    |      and exit LABEL_STABLE -> Agent 5
-                    |
-                    `-- label changed:
-                           promote corrected claim
-                           -> Agent 3 re-verification
-                                |
-                                |-- VERIFIED -> Agent 5
-                                |
-                                `-- REFINE -> Agent 4 again
-
-At most five Agent 4 refinement rounds are allowed.
-
-CRITICAL bound rule
--------------------
-If the FIFTH Agent 4 refinement changes the label, the corrected claim receives
-ONE FINAL Agent 3 verification. If that final verification is still REFINE,
-the claim is flagged for human review before Agent 5.
-
-Design invariants
------------------
-- Full Clean_note_text is passed to Agents 3 and 4. No character slicing.
-- Agent 1 label probabilities are audit-only and never control routing.
-- Operational failures are sticky and force human review downstream.
-- Every valid Agent 4 correction is promoted to current/final claim state,
-  including label-stable evidence/metadata corrections.
-- Complete, untruncated round history is retained.
-- Agent 5 does not receive the clinical note.
-- Agent 5 always receives the original Agent 2 claim plus the final loop state.
-"""
-
 from __future__ import annotations
-
 import argparse
 import ast
 import hashlib
@@ -63,9 +8,7 @@ import time
 from collections import Counter
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Tuple
-
 import pandas as pd
-
 from sage_common import SYMPTOMS, load_llm
 from agent3_unified_verifier import (
     verify_claim,
@@ -100,12 +43,7 @@ MAX_REFINE_ROUNDS = 5
 CHECKPOINT_EVERY_NOTES = 5
 
 
-# =============================================================================
-# GENERIC HELPERS
-# =============================================================================
-
 def parse_jsonish(value: Any, default: Any = None) -> Any:
-    """Parse JSON / Python-literal cells without inventing values."""
     if default is None:
         default = {}
 
@@ -137,7 +75,6 @@ def parse_jsonish(value: Any, default: Any = None) -> Any:
 
 
 def safe_bool(value: Any) -> bool:
-    """Strict boolean parser; avoids bool('false') == True."""
     if isinstance(value, bool):
         return value
     if value is None:
@@ -157,7 +94,6 @@ def safe_bool(value: Any) -> bool:
 
 
 def clean_scalar(value: Any) -> Any:
-    """Replace pandas missing scalars with an empty string."""
     try:
         if pd.isna(value):
             return ""
@@ -167,7 +103,6 @@ def clean_scalar(value: Any) -> Any:
 
 
 def normalize_id(value: Any) -> str:
-    """Stable string normalization for NOTE_ID/PAT_ID join auditing."""
     if value is None:
         return ""
     try:
@@ -191,7 +126,6 @@ def sha256_file(path: str | Path) -> str:
 
 
 def json_safe(obj: Any) -> Any:
-    """Recursively make nested audit objects JSON serializable."""
     if isinstance(obj, dict):
         return {str(k): json_safe(v) for k, v in obj.items()}
     if isinstance(obj, list):
@@ -214,12 +148,7 @@ def json_safe(obj: Any) -> Any:
     return obj
 
 
-# =============================================================================
-# FROZEN INPUT RECONSTRUCTION
-# =============================================================================
-
 def build_agent2_claim(row: pd.Series) -> Dict[str, Any]:
-    """Reconstruct the exact standardized Agent 2 claim from pair-level CSV."""
     feature = str(clean_scalar(row.get("feature", ""))).strip()
 
     return {
@@ -261,7 +190,6 @@ def build_agent2_claim(row: pd.Series) -> Dict[str, Any]:
 
 
 def build_initial_agent3_verification(row: pd.Series) -> Dict[str, Any]:
-    """Reconstruct the frozen initial Agent 3 verification record."""
     grounding = parse_jsonish(row.get("grounding_scores", ""), {})
     validation = parse_jsonish(row.get("validation_results", ""), {})
     issues = parse_jsonish(row.get("issues_found", ""), [])
@@ -297,14 +225,7 @@ def build_refined_claim(
     previous_claim: Dict[str, Any],
     refinement: Dict[str, Any],
 ) -> Dict[str, Any]:
-    """
-    Promote every VALID Agent 4 correction into the current claim state.
-
-    This is intentionally called for BOTH label-stable and label-changing
-    corrections so evidence/metadata corrections are never lost.
-    """
     feature = str(previous_claim.get("feature", ""))
-
     corrected_prediction = str(
         refinement.get(
             "corrected_prediction",
@@ -380,10 +301,6 @@ def build_refined_claim(
         "claim_state_source": "agent4_refinement",
     }
 
-
-# =============================================================================
-# OPERATIONAL-ERROR DETECTION
-# =============================================================================
 
 def verification_operational_error(
     verification: Dict[str, Any],
@@ -483,10 +400,6 @@ def make_refinement_error(
     }
 
 
-# =============================================================================
-# CORRECT BOUNDED CONTINUATION LOOP
-# =============================================================================
-
 def continue_verify_refine_from_frozen_agent3(
     original_claim: Dict[str, Any],
     initial_verification: Dict[str, Any],
@@ -495,13 +408,6 @@ def continue_verify_refine_from_frozen_agent3(
     skip_bertscore: bool = False,
     max_rounds: int = MAX_REFINE_ROUNDS,
 ) -> Dict[str, Any]:
-    """
-    Continue a claim from its FROZEN initial Agent 3 result.
-
-    No wholesale initial Agent 3 re-run occurs here. Frozen negative
-    claims receive only a deterministic candidate scan; updated Agent 3 is
-    called selectively when that scan finds structurally valid direct evidence.
-    """
     if max_rounds != 5:
         raise ValueError(
             "VERGE final protocol requires exactly 5 maximum "
@@ -541,9 +447,6 @@ def continue_verify_refine_from_frozen_agent3(
     final_bound_verification_verdict = ""
     exit_reason = ""
 
-    # ------------------------------------------------------------------
-    # Record frozen initial Agent 3 state.
-    # ------------------------------------------------------------------
     initial_verification_error = verification_operational_error(
         current_verification
     )
@@ -566,20 +469,6 @@ def continue_verify_refine_from_frozen_agent3(
         current_verification.get("verdict", "")
     ).strip().upper()
 
-    # ------------------------------------------------------------------
-    # Recall-V2 selective preflight for ALL frozen negative claims.
-    #
-    # We do NOT rerun initial Agent 3 wholesale. Instead:
-    #   1. deterministically scan the full note for up to three direct
-    #      target candidates;
-    #   2. apply the frozen clinical-evidence structural policy;
-    #   3. only when a candidate survives, selectively rerun updated
-    #      Agent 3 on this claim.
-    #
-    # Updated Agent 3 itself performs the same deterministic recovery
-    # first, so this selective negative recheck does not require an LLM
-    # call merely to discover the candidate.
-    # ------------------------------------------------------------------
     if current_label == "No":
         try:
             direct_recovery = (
@@ -731,9 +620,6 @@ def continue_verify_refine_from_frozen_agent3(
             "final_verification_applies_to_final_claim": True,
         }
 
-    # ------------------------------------------------------------------
-    # Agent 4 rounds. Agent 3 is called again ONLY after label changes.
-    # ------------------------------------------------------------------
     for round_num in range(1, max_rounds + 1):
         total_refinement_rounds += 1
 
@@ -745,8 +631,8 @@ def continue_verify_refine_from_frozen_agent3(
             refinement = refine_claim(
                 structured_claim=current_claim,
                 verification=current_verification,
-                note_text=full_note,     # FULL NOTE; never sliced
-                label_probs=label_probs, # AUDIT ONLY
+                note_text=full_note,     
+                label_probs=label_probs, 
             )
         except Exception as error:
             refinement = make_refinement_error(
@@ -760,7 +646,6 @@ def continue_verify_refine_from_frozen_agent3(
         ref_error = refinement_operational_error(refinement)
         operational_failure |= ref_error
 
-        # Invalid correction is not promoted to current_claim.
         if ref_error:
             history.append(
                 {
@@ -818,10 +703,6 @@ def continue_verify_refine_from_frozen_agent3(
             exit_reason = "REFINEMENT_ERROR"
             break
 
-        # --------------------------------------------------------------
-        # CRITICAL FIX:
-        # Promote EVERY valid Agent 4 correction before stability check.
-        # --------------------------------------------------------------
         promoted_claim = build_refined_claim(
             current_claim,
             refinement,
@@ -858,26 +739,18 @@ def continue_verify_refine_from_frozen_agent3(
             "operational_error": False,
         }
 
-        # --------------------------------------------------------------
-        # Label-stable correction exits WITHOUT re-verification by design,
-        # but the corrected claim state is now preserved as final_claim.
-        # --------------------------------------------------------------
         if not label_changed:
             label_stable = True
             exit_reason = "LABEL_STABLE"
             history.append(round_record)
             break
 
-        # --------------------------------------------------------------
-        # Label changed: MUST re-verify corrected claim with Agent 3.
-        # This includes the FIFTH refinement round.
-        # --------------------------------------------------------------
         try:
             post_verification = verify_claim(
                 structured_claim=current_claim,
-                note_text=full_note,      # FULL NOTE; never sliced
+                note_text=full_note,      
                 skip_bertscore=skip_bertscore,
-                label_probs=label_probs,  # AUDIT ONLY
+                label_probs=label_probs,  
             )
         except Exception as error:
             post_verification = make_verification_error(
@@ -925,18 +798,9 @@ def continue_verify_refine_from_frozen_agent3(
             exit_reason = "INVALID_REVERIFICATION_STATE"
             break
 
-        # --------------------------------------------------------------
-        # CRITICAL FIX:
-        # After FIFTH label-changing correction, the Agent 3 call above
-        # is the required FINAL verification.
-        # --------------------------------------------------------------
         if round_num == max_rounds:
             reached_max_refinement_bound = True
             final_bound_verification_verdict = "REFINE"
-
-            # Five binary label changes necessarily represent repeated
-            # oscillation. Persistent REFINE after the final verification
-            # is a forced human-review condition.
             human_review_oscillation = True
 
             if post_ver_error:
@@ -945,17 +809,11 @@ def continue_verify_refine_from_frozen_agent3(
                 exit_reason = "MAX_ROUNDS_LABEL_OSCILLATION"
             break
 
-        # Otherwise Agent 3 still requests REFINE; continue to Agent 4.
 
     if not exit_reason:
-        # Defensive: should not normally be reachable.
         operational_failure = True
         exit_reason = "CONTROLLER_ERROR"
 
-    # Does final Agent 3 verification correspond to final claim?
-    # - VERIFIED / post-label-change / max-bound: yes.
-    # - LABEL_STABLE: no new Agent 3 call by protocol, so final verification
-    #   is the verifier state that triggered the stable Agent 4 correction.
     final_verification_applies_to_final_claim = (
         exit_reason != "LABEL_STABLE"
     )
@@ -982,10 +840,6 @@ def continue_verify_refine_from_frozen_agent3(
         ),
     }
 
-
-# =============================================================================
-# INPUT AUDIT / JOIN
-# =============================================================================
 
 def load_and_audit_inputs(
     agent1_path: str,
@@ -1035,8 +889,6 @@ def load_and_audit_inputs(
                 f"{name} input is missing columns: {missing}"
             )
 
-    # The canonical frozen initial Agent 3 input must already be fully
-    # recovered and contain zero operational failures.
     frozen_a3_errors = a3["operational_error"].map(safe_bool)
     if frozen_a3_errors.any():
         bad = a3.loc[
@@ -1054,7 +906,6 @@ def load_and_audit_inputs(
             "Agent 1 _run_row_index must be unique."
         )
 
-    # Exact seven-claim structure.
     a2_counts = a2.groupby("_run_row_index").size()
     a3_counts = a3.groupby("_run_row_index").size()
 
@@ -1077,7 +928,6 @@ def load_and_audit_inputs(
             "Duplicate Agent 3 note-feature pairs detected."
         )
 
-    # Merge frozen Agent 2 and frozen Agent 3 pair records.
     merged = a2.merge(
         a3,
         on=["_run_row_index", "feature"],
@@ -1099,7 +949,6 @@ def load_and_audit_inputs(
 
     merged = merged.drop(columns=["_merge"])
 
-    # Verify frozen Agent 3 was checking the same Agent 2 label.
     pred_mismatch = (
         merged["prediction_a2"].astype(str).str.strip()
         != merged["prediction_a3"].astype(str).str.strip()
@@ -1119,7 +968,6 @@ def load_and_audit_inputs(
             + bad.head(20).to_string(index=False)
         )
 
-    # Join full note + Agent 1 probabilities.
     note_cols = [
         "_run_row_index",
         "NOTE_ID",
@@ -1152,7 +1000,6 @@ def load_and_audit_inputs(
             "One or more continuation claims have an empty clinical note."
         )
 
-    # Strong ID cross-checks.
     for source_col in [
         "NOTE_ID_a2",
         "NOTE_ID_a3",
@@ -1181,7 +1028,6 @@ def load_and_audit_inputs(
                     f"first row index: {mismatch[0]}"
                 )
 
-    # Canonical feature coverage.
     by_note = (
         merged.groupby("_run_row_index")["feature"]
         .apply(lambda s: set(map(str, s)))
@@ -1206,10 +1052,6 @@ def load_and_audit_inputs(
 
     return merged, hashes
 
-
-# =============================================================================
-# OUTPUT / CHECKPOINT HELPERS
-# =============================================================================
 
 def save_checkpoint(
     outdir: Path,
@@ -1247,10 +1089,6 @@ def save_checkpoint(
             indent=2,
         )
 
-
-# =============================================================================
-# MAIN EXECUTION
-# =============================================================================
 
 def run(args: argparse.Namespace) -> None:
     start_time = time.time()
@@ -1291,7 +1129,6 @@ def run(args: argparse.Namespace) -> None:
             f"\n[SMOKE MODE] Processing {len(note_indices)} notes."
         )
 
-    # Load shared Llama once for Agent 4 / Agent 3 rechecks / Agent 5.
     print("\nLoading shared LLM once...")
     load_llm()
     print("Shared LLM loaded.")
@@ -1353,7 +1190,6 @@ def run(args: argparse.Namespace) -> None:
 
             row = rows.iloc[0]
 
-            # Reconstruct frozen Agent 2 claim from suffixed columns.
             a2_row = pd.Series(
                 {
                     c[:-3] if c.endswith("_a2") else c: row[c]
@@ -1378,13 +1214,11 @@ def run(args: argparse.Namespace) -> None:
                     }
                 }
             )
-            # Explicitly restore canonical pair fields after merge.
             a2_row["feature"] = feature
             a2_row["prediction"] = row["prediction_a2"]
 
             original_claim = build_agent2_claim(a2_row)
 
-            # Reconstruct frozen initial Agent 3 verification.
             a3_row = pd.Series(
                 {
                     "feature": feature,
@@ -1510,7 +1344,6 @@ def run(args: argparse.Namespace) -> None:
                 decision["for_human_review"] = True
                 decision["forced_human_review"] = True
 
-            # Probability audits are descriptive only and never affect routing.
             for history_record in loop_info.get("history", []):
                 if not isinstance(history_record, dict):
                     continue
@@ -1786,9 +1619,6 @@ def run(args: argparse.Namespace) -> None:
                 flush=True,
             )
 
-    # ------------------------------------------------------------------
-    # Final outputs
-    # ------------------------------------------------------------------
     pair_df = pd.DataFrame(pair_rows)
 
     expected_claims = len(note_indices) * 7
