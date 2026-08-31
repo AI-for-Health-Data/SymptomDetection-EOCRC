@@ -61,7 +61,7 @@ For each symptom, the Extractor returns a structured prediction containing the b
 
 ### 2. Claim Composer
 
-**Code:** [`verge/agent2_claim_structurer.py`](verge/agent2_claim_structurer.py)
+**Code:** [`verge/claim_composer.py`](verge/claim_composer.py)
 
 The Claim Composer converts the Extractor's joint output into one standardized claim record per symptom.
 
@@ -82,7 +82,7 @@ Each claim contains fields such as:
 
 ### 3. Verifier
 
-**Code:** [`verge/agent3_unified_verifier.py`](verge/agent3_unified_verifier.py)
+**Code:** [`verge/verifier.py`](verge/verifier.py)
 
 **Shared evidence rules:** [`verge/clinical_evidence_policy.py`](verge/clinical_evidence_policy.py)
 
@@ -112,7 +112,7 @@ The Verifier deterministically routes each claim to:
 
 ### 4. Refiner
 
-**Code:** [`verge/agent4_refiner.py`](verge/agent4_refiner.py)
+**Code:** [`verge/refiner.py`](verge/refiner.py)
 
 The Refiner receives claims routed to `REFINE` and re-examines the clinical note to correct the claim.
 
@@ -170,12 +170,12 @@ The exact historical execution controller is preserved at:
 
 | Paper component | Implementation |
 | --- | --- |
-| Agent 1 — Extractor | [`verge/agent1_extractor.py`](verge/agent1_extractor.py) |
-| Agent 2 — Claim Composer | [`verge/agent2_claim_structurer.py`](verge/agent2_claim_structurer.py) |
-| Agent 3 — Verifier | [`verge/agent3_unified_verifier.py`](verge/agent3_unified_verifier.py) |
-| Agent 4 — Refiner | [`verge/agent4_refiner.py`](verge/agent4_refiner.py) |
+| Agent 1 — Extractor | [`verge/extractor.py`](verge/extractor.py) |
+| Agent 2 — Claim Composer | [`verge/claim_composer.py`](verge/claim_composer.py) |
+| Agent 3 — Verifier | [`verge/verifier.py`](verge/verifier.py) |
+| Agent 4 — Refiner | [`verge/refiner.py`](verge/refiner.py) |
 | Shared evidence policy | [`verge/clinical_evidence_policy.py`](verge/clinical_evidence_policy.py) |
-| Shared utilities | [`verge/sage_common.py`](verge/sage_common.py) |
+| Shared utilities | [`verge/utilities.py`](verge/utilities.py) |
 | Executed bounded-loop controller | [`reproducibility/executed_pipeline/run_verge_continuation_FINAL.py`](reproducibility/executed_pipeline/run_verge_continuation_FINAL.py) |
 
 ---
@@ -186,67 +186,35 @@ The repository includes the comparison systems reported in the paper.
 
 | Baseline | Code |
 | --- | --- |
-| Note-Only | [`baselines/note_only.py`](baselines/note_only.py) |
-| Review-of-Systems Rules | [`baselines/ros_rules.py`](baselines/ros_rules.py) |
-| ROS + UMLS | [`baselines/ros_manual_umls.py`](baselines/ros_manual_umls.py) |
-| MedCPT + RRF RAG | [`baselines/medcpt_rag.py`](baselines/medcpt_rag.py) |
-| medspaCy + ConText | [`baselines/run_medspacy_context_baseline.py`](baselines/run_medspacy_context_baseline.py) |
+| Note-Only | [`baselines/note_only_baseline.py`](baselines/note_only_baseline.py) |
+| Review-of-Systems Rules | [`baselines/ros_baseline.py`](baselines/ros_baseline.py) |
+| ROS + UMLS | [`baselines/ros_umls_baseline.py`](baselines/ros_umls_baseline.py) |
+| MedCPT + RRF RAG | [`baselines/medcpt_rag_baseline.py`](baselines/medcpt_rag_baseline.py) |
+| medspaCy + ConText | [`baselines/medspacy_context_baseline.py`](baselines/medspacy_context_baseline.py) |
 
 The final VERGE Extractor is provided separately under [`verge/`](verge/) and should not be confused with the MedCPT-RAG baseline.
 
 ---
 
-## Ablations
-
-Workflow ablations are provided under [`ablations/`](ablations/).
-
-### VERGE component ablations
-
-[`ablations/run_verge_ablation.py`](ablations/run_verge_ablation.py)
-
-This code supports developmental experiments used to evaluate the contribution of individual verification, refinement, and re-verification components.
-
-The corresponding developmental controller is:
-
-[`ablations/run_verge_continuation.py`](ablations/run_verge_continuation.py)
-
-### Agent-5 ablations
-
-Additional post-loop label-changing agents were evaluated during development but were not retained in the primary architecture.
-
-Code:
-
-- [`ablations/agent5/agent5_verifier_judge.py`](ablations/agent5/agent5_verifier_judge.py)
-- [`ablations/agent5/evaluate_agent5_ontology_entailment.py`](ablations/agent5/evaluate_agent5_ontology_entailment.py)
-
-These experiments are included to document the developmental comparison; the final VERGE architecture contains four agents.
-
----
-
 ## Sensitivity Analyses
 
-### Loop-bound sensitivity
+### Loop-Bound Sensitivity
 
-**Code:** [`sensitivity/run_verge_bound7_extension.py`](sensitivity/run_verge_bound7_extension.py)
+**Code:** [`sensitivity/loop_bound_sensitivity.py`](sensitivity/loop_bound_sensitivity.py)
 
-This developmental sensitivity analysis evaluates the stability of the bounded workflow under alternative refinement limits, including 3-, 5-, and 7-round configurations. The primary VERGE workflow reported in the paper uses a five-round bound.
+This developmental analysis evaluates the stability of the bounded Verifier–Refiner workflow under alternative refinement limits, including 3-, 5-, and 7-round configurations. The primary VERGE workflow reported in the paper uses a maximum of five refinement rounds.
 
-The five-round bound is used as the primary engineering safeguard.
+### Cross-Model Sensitivity
 
-### Cross-model sensitivity
-
-The Verifier–Refiner subsystem was additionally evaluated with Ministral to examine whether the verification framework transfers across language-model backbones.
+The Verifier–Refiner subsystem was additionally evaluated using Ministral to assess whether the verification and refinement framework transfers across language-model backbones.
 
 Code:
 
-- [`sensitivity/cross_model/build_m2_ministral_subset.py`](sensitivity/cross_model/build_m2_ministral_subset.py)
-- [`sensitivity/cross_model/m2_ministral_backend.py`](sensitivity/cross_model/m2_ministral_backend.py)
-- [`sensitivity/cross_model/run_m2_ministral_verifier_refiner.py`](sensitivity/cross_model/run_m2_ministral_verifier_refiner.py)
-- [`sensitivity/cross_model/score_m2_ministral.py`](sensitivity/cross_model/score_m2_ministral.py)
-- [`sensitivity/cross_model/download_ministral3_14b.py`](sensitivity/cross_model/download_ministral3_14b.py)
+- [`sensitivity/cross_model/ministral_backend.py`](sensitivity/cross_model/ministral_backend.py)
+- [`sensitivity/cross_model/ministral_verifier_refiner.py`](sensitivity/cross_model/ministral_verifier_refiner.py)
+- [`sensitivity/cross_model/score_ministral_results.py`](sensitivity/cross_model/score_ministral_results.py)
 
-This experiment evaluates portability of the Verifier–Refiner subsystem and is not an end-to-end replacement of the primary VERGE pipeline.
-
+This analysis replaces the Verifier–Refiner language-model backbone with `mistralai/Ministral-3-14B-Instruct-2512-BF16` while retaining the frozen Extractor output. It evaluates the portability of the verification and refinement subsystem rather than an end-to-end replacement of the primary VERGE pipeline.
 ---
 
 ## Models
@@ -281,7 +249,6 @@ VERGE/
 ├── baselines/
 ├── ablations/
 ├── sensitivity/
-└── reproducibility/
 ```
 
 This release focuses on the **method implementation, comparison baselines, ablations, and sensitivity analyses**. Internal result-assembly scripts and development history are intentionally excluded to keep the repository concise.
@@ -314,20 +281,6 @@ The repository does not contain:
 - patient-level model outputs.
 
 Users wishing to reproduce the complete clinical evaluation must have authorized access to the corresponding source data and required terminology resources.
-
----
-
-## Reproducibility
-
-Hashes for the frozen primary implementation are recorded in:
-
-[`reproducibility/FROZEN_PRIMARY_FILES.txt`](reproducibility/FROZEN_PRIMARY_FILES.txt)
-
-SHA-256 hashes for the included Python source files are recorded in:
-
-[`reproducibility/SHA256SUMS_PYTHON.txt`](reproducibility/SHA256SUMS_PYTHON.txt)
-
-These files distinguish the primary four-agent implementation from developmental ablations.
 
 ---
 
